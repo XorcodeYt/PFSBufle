@@ -1,0 +1,24 @@
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+x64/
+x86/
+Debug/
+Release/
+*.obj
+*.log
+*.tlog
+*.pdb
+*.ipch
+*.idb
+*.ilk
+*.cache
+*.db
+
+# Custom folders
+.Niggaware/
