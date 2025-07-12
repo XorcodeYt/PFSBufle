@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "menu.h"
 #include "utils.h"
+#include "cheat.h"
+#include "font.h"
 
 namespace d3d12hook {
     PresentD3D12            oPresentD3D12 = nullptr;
@@ -38,18 +40,17 @@ namespace d3d12hook {
 
         if (!gInitialized) {
             DebugLog("[d3d12hook] Initializing ImGui on first Present.\n");
+
             if (FAILED(pSwapChain->GetDevice(__uuidof(ID3D12Device), (void**)&gDevice))) {
                 LogHRESULT("GetDevice", E_FAIL);
                 return oPresentD3D12(pSwapChain, SyncInterval, Flags);
             }
 
-            // Swap Chain description
-            
             pSwapChain->GetDesc(&desc);
             gBufferCount = desc.BufferCount;
             DebugLog("[d3d12hook] BufferCount=%u\n", gBufferCount);
 
-            // Create descriptor heaps
+            // Create heaps
             D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
             heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
             heapDesc.NumDescriptors = gBufferCount;
@@ -65,11 +66,10 @@ namespace d3d12hook {
                 return oPresentD3D12(pSwapChain, SyncInterval, Flags);
             }
 
-            // Allocate frame contexts
+            // FrameContexts
             gFrameContexts = new FrameContext[gBufferCount];
             ZeroMemory(gFrameContexts, sizeof(FrameContext) * gBufferCount);
 
-            // Create RTVs for each back buffer
             UINT rtvSize = gDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
             auto rtvHandle = gHeapRTV->GetCPUDescriptorHandleForHeapStart();
             for (UINT i = 0; i < gBufferCount; ++i) {
@@ -81,9 +81,12 @@ namespace d3d12hook {
                 rtvHandle.ptr += rtvSize;
             }
 
-            // ImGui setup
+            // ImGui
             ImGui::CreateContext();
-            ImGuiIO& io = ImGui::GetIO(); (void)io;
+            ImGuiIO& io = ImGui::GetIO();
+            ImFontConfig fontConfig;
+            fontConfig.FontDataOwnedByAtlas = false;
+            io.Fonts->AddFontFromMemoryTTF(MaFont, MaFontsize, 16.0f, &fontConfig);
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
             ImGui::StyleColorsDark();
             ImGui_ImplWin32_Init(desc.OutputWindow);
@@ -92,42 +95,40 @@ namespace d3d12hook {
                 gHeapSRV,
                 gHeapSRV->GetCPUDescriptorHandleForHeapStart(),
                 gHeapSRV->GetGPUDescriptorHandleForHeapStart());
-            DebugLog("[d3d12hook] ImGui initialized.\n");
 
             inputhook::Init(desc.OutputWindow);
-
-            // Hook CommandQueue and Fence are already captured by minhook
             gInitialized = true;
+            DebugLog("[d3d12hook] ImGui initialized.\n");
         }
 
-        if (!gShutdown) {
-            // Render ImGui
+        if (!gShutdown &&
+            gDevice &&
+            gHeapSRV &&
+            gCommandQueue &&
+            gInitialized &&
+            gFrameContexts)
+        {
             ImGui_ImplDX12_NewFrame();
             ImGui_ImplWin32_NewFrame();
             ImGui::NewFrame();
-
             ImGuiIO& io = ImGui::GetIO();
             io.MouseDrawCursor = menu::isOpen;
 
-            if (menu::isOpen)
-            {
+            if (menu::isOpen) {
                 menu::Init();
-
                 while (ShowCursor(FALSE) >= 0);
-
                 ReleaseCapture();
             }
-            else
-            {
+            else {
                 while (ShowCursor(FALSE) >= 0);
-
                 SetCapture(desc.OutputWindow);
             }
+
+			cheat::Cheat::RefreshCheat(); // Call to refresh cheat features
 
             UINT frameIdx = pSwapChain->GetCurrentBackBufferIndex();
             FrameContext& ctx = gFrameContexts[frameIdx];
 
-            // Reset allocator and command list
             static ID3D12CommandAllocator* allocator = nullptr;
             if (!allocator) {
                 gDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator));
@@ -140,7 +141,6 @@ namespace d3d12hook {
             }
             gCommandList->Reset(allocator, nullptr);
 
-            // Transition to render target
             D3D12_RESOURCE_BARRIER barrier = {};
             barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             barrier.Transition.pResource = ctx.renderTarget;
@@ -155,23 +155,17 @@ namespace d3d12hook {
             ImGui::Render();
             ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), gCommandList);
 
-            // Transition back to present
             barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
             barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
             gCommandList->ResourceBarrier(1, &barrier);
             gCommandList->Close();
 
-            // Execute
-            if (!gCommandQueue) {
-                DebugLog("[d3d12hook] CommandQueue not set, skipping ExecuteCommandLists.\n");
-            }
-            else {
-                gCommandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList* const*>(&gCommandList));
-            }
+            gCommandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList* const*>(&gCommandList));
         }
 
         return oPresentD3D12(pSwapChain, SyncInterval, Flags);
     }
+
 
     void STDMETHODCALLTYPE hookExecuteCommandListsD3D12(
         ID3D12CommandQueue * _this,

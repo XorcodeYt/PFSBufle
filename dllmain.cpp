@@ -27,11 +27,6 @@ static DWORD WINAPI onAttach(LPVOID lpParameter)
 
     DebugLog("[DllMain] hooks::Init completed.\n");
 
-    while (!(GetAsyncKeyState(VK_END) & 1)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        cheat::Cheat::RefreshCheat();
-    }
-
     return 0;
 }
 
