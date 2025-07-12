@@ -2,61 +2,94 @@
 #include "utils.h"
 #include <windows.h>
 
-cheat::Cheat::ReceiveBeginPlayFn cheat::Cheat::original_Server = nullptr;
-cheat::Cheat::ReceiveBeginPlayFn cheat::Cheat::original_Client = nullptr;
-
-void __fastcall cheat::Cheat::Hooked_Server_ReceiveBeginPlay(SDK::AActor* This)
-{
-    utils::Console::log("EyeOfReach Projectile Server Spawned !");
-    if (original_Server) original_Server(This);
-}
-
-void __fastcall cheat::Cheat::Hooked_Client_ReceiveBeginPlay(SDK::AActor* This)
-{
-    utils::Console::log("EyeOfReach Projectile Client Spawned !");
-    if (original_Client) original_Client(This);
-}
-
-void cheat::Cheat::Hook_EyeOfReach_Projectile()
-{
-    constexpr int ReceiveBeginPlayIndex = 145;
-
-    // Hook Server
-    {
-        auto cls = SDK::AEyeOfReach_Projectile_Server_C::StaticClass();
-        void* defaultObject = cls->GetDefaultObj();
-        if (!defaultObject) {
-            utils::Console::logError("[Hook] DefaultObject for EyeOfReach Server/Client is null!");
-            return;
-        }
-        void** vtable = *(void***)defaultObject;
-        original_Server = reinterpret_cast<ReceiveBeginPlayFn>(vtable[ReceiveBeginPlayIndex]);
-
-        DWORD oldProtect;
-        VirtualProtect(&vtable[ReceiveBeginPlayIndex], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProtect);
-        vtable[ReceiveBeginPlayIndex] = reinterpret_cast<void*>(&Hooked_Server_ReceiveBeginPlay);
-        VirtualProtect(&vtable[ReceiveBeginPlayIndex], sizeof(void*), oldProtect, &oldProtect);
+namespace helper {
+    inline float Vec3Size(const SDK::FVector& vec) {
+        return sqrtf(vec.X * vec.X + vec.Y * vec.Y + vec.Z * vec.Z);
     }
 
-    // Hook Client
-    {
-        auto cls = SDK::AEyeOfReach_Projectile_Client_C::StaticClass();
-        void* defaultObject = cls->GetDefaultObj();
-        if (!defaultObject) {
-            utils::Console::logError("[Hook] DefaultObject for EyeOfReach Server/Client is null!");
-            return;
-        }
-        void** vtable = *(void***)defaultObject;
-        original_Client = reinterpret_cast<ReceiveBeginPlayFn>(vtable[ReceiveBeginPlayIndex]);
-
-        DWORD oldProtect;
-        VirtualProtect(&vtable[ReceiveBeginPlayIndex], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProtect);
-        vtable[ReceiveBeginPlayIndex] = reinterpret_cast<void*>(&Hooked_Client_ReceiveBeginPlay);
-        VirtualProtect(&vtable[ReceiveBeginPlayIndex], sizeof(void*), oldProtect, &oldProtect);
+    inline SDK::FVector Vec3Normalize(const SDK::FVector& vec) {
+        float mag = Vec3Size(vec);
+        if (mag == 0.f) return SDK::FVector(0, 0, 0);
+        return SDK::FVector(vec.X / mag, vec.Y / mag, vec.Z / mag);
     }
 
-    utils::Console::log("Hook EyeOfReach projectile (Server + Client) OK.");
+    inline float Vec2Distance(const SDK::FVector2D& a, const SDK::FVector2D& b) {
+        float dx = a.X - b.X;
+        float dy = a.Y - b.Y;
+        return sqrtf(dx * dx + dy * dy);
+    }
+
+    inline float Vec3Distance(const SDK::FVector& a, const SDK::FVector& b) {
+        float dx = a.X - b.X;
+        float dy = a.Y - b.Y;
+        float dz = a.Z - b.Z;
+        return sqrtf(dx * dx + dy * dy + dz * dz);
+    }
+    inline SDK::FRotator VecToRotator(const SDK::FVector& vec)
+    {
+        SDK::FRotator rot;
+        rot.Pitch = -atan2f(vec.Z, sqrtf(vec.X * vec.X + vec.Y * vec.Y)) * (180.0f / 3.14159265f);
+        rot.Yaw = atan2f(vec.Y, vec.X) * (180.0f / 3.14159265f);
+        rot.Roll = 0.0f;
+        return rot;
+    }
 }
+
+SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* localPawn, SDK::FVector2D screenCenter, SDK::FVector2D& outScreenPos)
+{
+    SDK::ACharacter* bestTarget = nullptr;
+    float bestMetric = FLT_MAX;
+
+    SDK::FVector localPos = localPawn->K2_GetActorLocation();
+
+    for (int i = 0; i < SDK::UObject::GObjects->Num(); ++i)
+    {
+        SDK::UObject* obj = SDK::UObject::GObjects->GetByIndex(i);
+        if (!obj || !obj->IsA(SDK::ACharacter::StaticClass())) continue;
+
+        auto* character = static_cast<SDK::ACharacter*>(obj);
+        if (!character || character == localPawn) continue;
+
+        std::string name = character->GetName();
+        if (name.find("TrainGusPlayer") == std::string::npos) continue;
+
+        auto* mesh = character->Mesh;
+        if (!mesh || mesh->GetNumBones() <= 2) continue;
+
+        SDK::FVector boneWorld = mesh->GetSocketLocation(mesh->GetBoneName(2));
+
+        SDK::FVector2D screenPos;
+        if (!pc->ProjectWorldLocationToScreen(boneWorld, &screenPos, false)) continue;
+
+        float distToCrosshair = helper::Vec2Distance(screenPos, screenCenter);
+
+        if (features::aimbot_fov_enabled && features::aimbot_fov > 0.f && distToCrosshair > features::aimbot_fov)
+            continue;
+
+        if (features::aimbot_type == 0) // crosshair
+        {
+            if (distToCrosshair < bestMetric)
+            {
+                bestMetric = distToCrosshair;
+                bestTarget = character;
+                outScreenPos = screenPos;
+            }
+        }
+        else if (features::aimbot_type == 1) // 3D distance
+        {
+            float distToPlayer = helper::Vec3Size(boneWorld - localPos);
+            if (distToPlayer < bestMetric)
+            {
+                bestMetric = distToPlayer;
+                bestTarget = character;
+                outScreenPos = screenPos;
+            }
+        }
+    }
+
+    return bestTarget;
+}
+
 
 bool cheat::Cheat::InitCheat()
 {
@@ -64,13 +97,11 @@ bool cheat::Cheat::InitCheat()
     if (!PFSModuleBase)
     {
         utils::Console::logError("PirateFS-Win64-Shipping.exe cannot be found");
-        return;
+        return false;
     }
 
     utils::Console::log("PirateFS-Win64-Shipping.exe found");
-    utils::Console::log("[DLL IDENTIFIER] Build tag: V2025.07.12_01h58");
-
-    Cheat::Hook_EyeOfReach_Projectile();
+    utils::Console::log("[DLL IDENTIFIER] Build tag: V2025.07.12_20h18");
     return true;
 }
 
@@ -123,7 +154,8 @@ void cheat::Cheat::RefreshCheat()
         if (!character || character == localPawn) continue;
 
         std::string charName = character->GetName();
-        if (charName.find("TrainGusPlayer") == std::string::npos) continue;
+        if (charName.find("TrainGusPlayer_C") == std::string::npos) continue;
+		utils::Console::log("Found character: " + charName);
 
         SDK::USkeletalMeshComponent* mesh = character->Mesh;
         if (!mesh) continue;
@@ -237,8 +269,7 @@ void cheat::Cheat::RefreshCheat()
             }
         }
     }
-
-
+	// Bunny Hop
     if (features::bhop && (GetAsyncKeyState(VK_SPACE) & 0x8000)) {
         SDK::UWorld* world = SDK::UWorld::GetWorld();
         if (world) {
@@ -252,7 +283,7 @@ void cheat::Cheat::RefreshCheat()
             }
         }
     }
-
+    //Crosshair
     if (features::crosshair_enabled) {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         ImU32 color = ImGui::ColorConvertFloat4ToU32(features::crosshair_color);
@@ -267,7 +298,7 @@ void cheat::Cheat::RefreshCheat()
             drawList->AddLine(ImVec2(screenCenter.x, screenCenter.y - s), ImVec2(screenCenter.x, screenCenter.y + s), color, t);
         }
     }
-
+	//Godode
     if (features::godmode) {
         SDK::UWorld* world = SDK::UWorld::GetWorld();
         if (!world) return;
@@ -299,6 +330,82 @@ void cheat::Cheat::RefreshCheat()
                     }
                 }
             }
+        }
+    }
+	// Aimbot
+    if (features::aimbot_enabled && (GetAsyncKeyState(VK_RBUTTON) & 0x8000))
+    {
+        ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+
+        SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
+        SDK::FVector2D targetScreen;
+        SDK::ACharacter* bestTarget = GetBestTargetCharacter(playerController, localPawn, screenCenterVec, targetScreen);
+
+        if (bestTarget)
+        {
+            drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), 5.0f, IM_COL32(255, 0, 0, 255));
+            SDK::USkeletalMeshComponent* mesh = bestTarget->Mesh;
+            if (mesh && mesh->GetNumBones() > 2)
+            {
+                SDK::FVector targetHead = mesh->GetSocketLocation(mesh->GetBoneName(2));
+                SDK::FVector from = playerController->PlayerCameraManager->GetCameraLocation();
+                SDK::FVector aimDir = helper::Vec3Normalize(targetHead - from);
+                SDK::FRotator aimRot = helper::VecToRotator(aimDir);
+                aimRot.Pitch *= -1.f;
+
+                playerController->SetControlRotation(aimRot);
+
+                SDK::APlayerCameraManager* cam = playerController->PlayerCameraManager;
+                if (cam)
+                    cam->K2_SetActorRotation(aimRot, false);
+
+                utils::Console::log("[AIMBOT] Aim applied: Pitch=" + std::to_string(aimRot.Pitch) + ", Yaw=" + std::to_string(aimRot.Yaw));
+            }
+        }
+    }
+
+    if (features::aimbot_fov_enabled && features::aimbot_fov_enabled && features::aimbot_fov > 0.f)
+    {
+        ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+        drawList->AddCircle(screenCenter, features::aimbot_fov, IM_COL32(255, 255, 0, 180), 64, 1.5f);
+    }
+    static std::string lastSpoofedName = "";
+	// Name spoofing
+    if (features::spoof_name_enabled) {
+        std::string current = std::string(features::spoofed_name);
+        if (current != lastSpoofedName && current.length() > 0) {
+            SDK::APlayerController* pc = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
+            if (pc) {
+                std::wstring wideName(current.begin(), current.end());
+                SDK::FString fName(wideName.c_str());
+                pc->ServerChangeName(fName);
+                utils::Console::log("[NAME SPOOF] Sent name change to: " + current);
+                lastSpoofedName = current;
+            }
+        }
+    }
+    // Fly mode
+    if (features::enable_fly) {
+        SDK::ACharacter* character = static_cast<SDK::ACharacter*>(localPawn);
+        if (character) {
+            SDK::UPrimitiveComponent* root = reinterpret_cast<SDK::UPrimitiveComponent*>(character->RootComponent);
+            if (root) {
+                float flySpeed = 3000.0f;
+                SDK::FVector impulse(0.f, 0.f, flySpeed);
+                SDK::USkeletalMeshComponent* mesh = character->Mesh;
+                if (!mesh) return;
+                SDK::FName rootBone = mesh->GetBoneName(0);
+                root->AddImpulse(impulse, rootBone, true);
+            }
+        }
+    }
+
+    if (localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) {
+        auto* gusPlayer = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
+        if (features::infinite_ammo) {
+            gusPlayer->Flintlock_ammo = 5;
+            gusPlayer->Eye_of_reach_ammo = 5;
+            gusPlayer->Blunderbuss_Ammo = 5;
         }
     }
     return;

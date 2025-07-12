@@ -19,6 +19,13 @@ namespace features {
     float crosshair_size = 6.0f;
     float crosshair_thickness = 1.5f;
     ImVec4 crosshair_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+	bool aimbot_enabled = false;
+    bool aimbot_fov_enabled = false;
+    float aimbot_fov = 90.0f;
+	int aimbot_type = 0;
+    char spoofed_name[64] = "HaikiuWasHere";
+	bool spoof_name_enabled = false;
+    bool enable_fly = false;
 }
 
 namespace menu {
@@ -133,9 +140,13 @@ namespace menu {
             ImGui::Checkbox("3D Box ESP", &features::box3d_esp);
             ImGui::Separator();
             ImGui::Checkbox("Bunny Hop", &features::bhop);
+			ImGui::Checkbox("Enable Fly", &features::enable_fly);
+			ImGui::Checkbox("Infinite Ammo", &features::infinite_ammo);
             ImGui::Checkbox("Gode Mode", &features::godmode);
-
             ImGui::Checkbox("Magic Bullet", &features::enable_magicbullet);
+            ImGui::Separator();
+            ImGui::InputText("Spoofed Name", features::spoofed_name, sizeof(features::spoofed_name));
+			ImGui::Checkbox("Enable Name Spoofing", &features::spoof_name_enabled);
         }
         else if (strcmp(tabs[current_tab], "View") == 0) {
             ImGui::Checkbox("Enable FOV", &features::fov_enabled);
@@ -147,6 +158,37 @@ namespace menu {
             ImGui::SliderFloat("Thickness", &features::crosshair_thickness, 0.5f, 5.0f);
             ImGui::ColorEdit4("Color", (float*)&features::crosshair_color);
         }
+        else if (strcmp(tabs[current_tab], "Weapon") == 0) {
+            ImGui::Checkbox("Enable Aimbot", &features::aimbot_enabled);
+            ImGui::Checkbox("Use Aimbot FOV Limit", &features::aimbot_fov_enabled);
+            ImGui::SliderFloat("Aimbot FOV", &features::aimbot_fov, 10.0f, 500.0f);
+            const char* aimModes[] = { "Closest to Crosshair", "Closest by Distance" };
+            ImGui::Combo("Aimbot Type", &features::aimbot_type, aimModes, IM_ARRAYSIZE(aimModes));
+        }
+        else if (strcmp(tabs[current_tab], "Ships") == 0) {
+            ImGui::Text("Ship Features");
+            // Add ship-related features here
+        }
+        else if (strcmp(tabs[current_tab], "World") == 0) {
+            ImGui::Text("World Features");
+            // Add world-related features here
+        }
+        else if (strcmp(tabs[current_tab], "Gameplay") == 0) {
+            ImGui::Text("Gameplay Features");
+            // Add gameplay-related features here
+        }
+        else if (strcmp(tabs[current_tab], "Skins") == 0) {
+            ImGui::Text("Skin Customization");
+            // Add skin customization options here
+        }
+        else if (strcmp(tabs[current_tab], "Settings") == 0) {
+            ImGui::Text("Settings");
+            // Add settings options here
+        }
+        else if (strcmp(tabs[current_tab], "Account") == 0) {
+            ImGui::Text("Account Management");
+            // Add account management options here
+		}
         else if (strcmp(tabs[current_tab], "Server") == 0) {
 			bool prestaEnabled = false;
             ImGui::Checkbox("Enable Presta d'Haikiu", &prestaEnabled);

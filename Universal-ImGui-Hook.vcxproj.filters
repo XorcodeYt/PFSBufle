@@ -66,6 +66,9 @@
     <ClCompile Include="SDK\Engine_functions.cpp">
       <Filter>Sources Files</Filter>
     </ClCompile>
+    <ClCompile Include="cheat.cpp">
+      <Filter>Sources Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\imconfig.h">
