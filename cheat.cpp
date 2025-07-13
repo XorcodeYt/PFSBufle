@@ -154,8 +154,7 @@ void cheat::Cheat::RefreshCheat()
         if (!character || character == localPawn) continue;
 
         std::string charName = character->GetName();
-        if (charName.find("TrainGusPlayer_C") == std::string::npos) continue;
-		utils::Console::log("Found character: " + charName);
+        if (charName.find("TrainGusPlayer") == std::string::npos) continue;
 
         SDK::USkeletalMeshComponent* mesh = character->Mesh;
         if (!mesh) continue;
@@ -283,7 +282,7 @@ void cheat::Cheat::RefreshCheat()
             }
         }
     }
-    //Crosshair
+    // Crosshair
     if (features::crosshair_enabled) {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         ImU32 color = ImGui::ColorConvertFloat4ToU32(features::crosshair_color);
@@ -298,43 +297,8 @@ void cheat::Cheat::RefreshCheat()
             drawList->AddLine(ImVec2(screenCenter.x, screenCenter.y - s), ImVec2(screenCenter.x, screenCenter.y + s), color, t);
         }
     }
-	//Godode
-    if (features::godmode) {
-        SDK::UWorld* world = SDK::UWorld::GetWorld();
-        if (!world) return;
-
-        SDK::ULevel* level = world->PersistentLevel;
-        if (!level) return;
-
-        for (int i = 0; i < level->Actors.Num(); ++i) {
-            SDK::AActor* actor = level->Actors[i];
-            if (!actor) continue;
-
-            std::string actorName = actor->GetName();
-            utils::Console::log("[Actor] " + actorName);
-
-            for (int j = 0; j < actor->Children.Num(); ++j) {
-                SDK::UObject* child = actor->Children[j];
-                if (!child) continue;
-
-                std::string childName = child->GetName();
-                utils::Console::log("    [+] Child: " + childName);
-
-                if (child->IsA(SDK::UActorComponent::StaticClass())) {
-                    auto component = static_cast<SDK::UActorComponent*>(child);
-                    std::string compName = component->GetName();
-                    utils::Console::log("        ↳ UActorComponent: " + compName);
-
-                    if (compName.find("Banana") != std::string::npos) {
-                        utils::Console::log("        [!!] Candidate BananaComponent: " + compName);
-                    }
-                }
-            }
-        }
-    }
 	// Aimbot
-    if (features::aimbot_enabled && (GetAsyncKeyState(VK_RBUTTON) & 0x8000))
-    {
+    if (features::aimbot_fov_enabled ) {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
 
         SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
@@ -344,22 +308,26 @@ void cheat::Cheat::RefreshCheat()
         if (bestTarget)
         {
             drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), 5.0f, IM_COL32(255, 0, 0, 255));
-            SDK::USkeletalMeshComponent* mesh = bestTarget->Mesh;
-            if (mesh && mesh->GetNumBones() > 2)
+
+            if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000))
             {
-                SDK::FVector targetHead = mesh->GetSocketLocation(mesh->GetBoneName(2));
-                SDK::FVector from = playerController->PlayerCameraManager->GetCameraLocation();
-                SDK::FVector aimDir = helper::Vec3Normalize(targetHead - from);
-                SDK::FRotator aimRot = helper::VecToRotator(aimDir);
-                aimRot.Pitch *= -1.f;
+                SDK::USkeletalMeshComponent* mesh = bestTarget->Mesh;
+                if (mesh && mesh->GetNumBones() > 2)
+                {
+                    SDK::FVector targetHead = mesh->GetSocketLocation(mesh->GetBoneName(2));
+                    SDK::FVector from = playerController->PlayerCameraManager->GetCameraLocation();
+                    SDK::FVector aimDir = helper::Vec3Normalize(targetHead - from);
+                    SDK::FRotator aimRot = helper::VecToRotator(aimDir);
+                    aimRot.Pitch *= -1.f;
 
-                playerController->SetControlRotation(aimRot);
+                    playerController->SetControlRotation(aimRot);
 
-                SDK::APlayerCameraManager* cam = playerController->PlayerCameraManager;
-                if (cam)
-                    cam->K2_SetActorRotation(aimRot, false);
+                    SDK::APlayerCameraManager* cam = playerController->PlayerCameraManager;
+                    if (cam)
+                        cam->K2_SetActorRotation(aimRot, false);
 
-                utils::Console::log("[AIMBOT] Aim applied: Pitch=" + std::to_string(aimRot.Pitch) + ", Yaw=" + std::to_string(aimRot.Yaw));
+                    utils::Console::log("[AIMBOT] Aim applied: Pitch=" + std::to_string(aimRot.Pitch) + ", Yaw=" + std::to_string(aimRot.Yaw));
+                }
             }
         }
     }
@@ -384,22 +352,7 @@ void cheat::Cheat::RefreshCheat()
             }
         }
     }
-    // Fly mode
-    if (features::enable_fly) {
-        SDK::ACharacter* character = static_cast<SDK::ACharacter*>(localPawn);
-        if (character) {
-            SDK::UPrimitiveComponent* root = reinterpret_cast<SDK::UPrimitiveComponent*>(character->RootComponent);
-            if (root) {
-                float flySpeed = 3000.0f;
-                SDK::FVector impulse(0.f, 0.f, flySpeed);
-                SDK::USkeletalMeshComponent* mesh = character->Mesh;
-                if (!mesh) return;
-                SDK::FName rootBone = mesh->GetBoneName(0);
-                root->AddImpulse(impulse, rootBone, true);
-            }
-        }
-    }
-
+	// Infinite Ammo
     if (localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) {
         auto* gusPlayer = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
         if (features::infinite_ammo) {
@@ -408,5 +361,77 @@ void cheat::Cheat::RefreshCheat()
             gusPlayer->Blunderbuss_Ammo = 5;
         }
     }
+	// Magic bullet
+    SDK::FVector2D dummyVec2;
+    SDK::ACharacter* target = GetBestTargetCharacter(playerController, localPawn, { 0, 0 }, dummyVec2);
+    if (!target) return;
+
+    // Loop through all objects
+    for (int i = 0; i < SDK::UObject::GObjects->Num(); ++i)
+    {
+        SDK::UObject* obj = SDK::UObject::GObjects->GetByIndex(i);
+        if (!obj) continue;
+
+        // === CLIENT SIDE ===
+        if (obj->IsA(SDK::AFlintlock_Projectile_Client_C::StaticClass()))
+        {
+            auto* proj = static_cast<SDK::AFlintlock_Projectile_Client_C*>(obj);
+            if (!proj || proj->Hit_Actor || proj->ImDone)
+                continue;
+
+            proj->Hit_Actor = target;
+            //proj->ImDone = true;
+
+            SDK::FVector targetLocation = target->K2_GetActorLocation();
+            SDK::FVector projLocation = proj->K2_GetActorLocation();
+
+            SDK::FHitResult& hit = proj->Hit_Result;
+            hit.bBlockingHit = true;
+            hit.bStartPenetrating = false;
+            hit.Time = 0.f;
+            hit.Distance = 0.f;
+            hit.Location = *reinterpret_cast<SDK::FVector_NetQuantize*>(&targetLocation);
+            hit.ImpactPoint = hit.Location;
+            SDK::FVector up = SDK::FVector(0.f, 0.f, 1.f);
+            hit.Normal = *reinterpret_cast<SDK::FVector_NetQuantizeNormal*>(&up);
+            hit.ImpactNormal = *reinterpret_cast<SDK::FVector_NetQuantizeNormal*>(&up);
+            hit.TraceStart = *reinterpret_cast<SDK::FVector_NetQuantize*>(&projLocation);
+            hit.TraceEnd = hit.Location;
+
+            utils::Console::log("[MAGIC BULLET CLIENT] Hit forced on: " + target->GetName());
+        }
+
+        // === SERVER SIDE ===
+        if (obj->IsA(SDK::AFlintlock_Projectile_Server_C::StaticClass()))
+        {
+            auto* proj = static_cast<SDK::AFlintlock_Projectile_Server_C*>(obj);
+            if (!proj || proj->Hit_Actor || proj->ImDone)
+                continue;
+
+            proj->Hit_Actor = target;
+			proj->Actor = target;
+            proj->Hit_gentlemen = true;
+            //proj->ImDone = true;
+
+            SDK::FVector targetLocation = target->K2_GetActorLocation();
+            SDK::FVector projLocation = proj->K2_GetActorLocation();
+
+            SDK::FHitResult& hit = proj->Hit_Result;
+            hit.bBlockingHit = true;
+            hit.bStartPenetrating = false;
+            hit.Time = 0.f;
+            hit.Distance = 0.f;
+            hit.Location = *reinterpret_cast<SDK::FVector_NetQuantize*>(&targetLocation);
+            hit.ImpactPoint = hit.Location;
+            SDK::FVector up = SDK::FVector(0.f, 0.f, 1.f);
+            hit.Normal = *reinterpret_cast<SDK::FVector_NetQuantizeNormal*>(&up);
+            hit.ImpactNormal = *reinterpret_cast<SDK::FVector_NetQuantizeNormal*>(&up);
+            hit.TraceStart = *reinterpret_cast<SDK::FVector_NetQuantize*>(&projLocation);
+            hit.TraceEnd = hit.Location;
+
+            utils::Console::log("[MAGIC BULLET SERVER] Hit forced on: " + target->GetName());
+        }
+    }
+
     return;
 }

@@ -6,27 +6,38 @@ inline float Clamp01(float value) {
     return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
 }
 namespace features {
-    float fov = 90.0f;
-    bool fov_enabled = false;
+    // player features
     bool bone_esp = false;
     bool box2d_esp = false;
     bool box3d_esp = false;
+
+    // misc
     bool bhop = false;
-    bool godmode = false;
-    bool enable_magicbullet = false;
+    bool godmode = false; // marche po
+    bool enable_fly = false; // marche po
+
+    // view
+    float fov = 90.0f;
+    bool fov_enabled = false;
     bool crosshair_enabled = false;
     int crosshair_type = 0;
     float crosshair_size = 6.0f;
     float crosshair_thickness = 1.5f;
     ImVec4 crosshair_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-	bool aimbot_enabled = false;
+
+    // weapon
+    bool aimbot_enabled = false;
     bool aimbot_fov_enabled = false;
     float aimbot_fov = 90.0f;
-	int aimbot_type = 0;
+    int aimbot_type = 0;
+    bool infinite_ammo = false;
+    bool enable_magicbullet = false; // marche po
+
+    // server
+    bool spoof_name_enabled = false;
     char spoofed_name[64] = "HaikiuWasHere";
-	bool spoof_name_enabled = false;
-    bool enable_fly = false;
 }
+
 
 namespace menu {
     bool isOpen = true;
@@ -99,9 +110,8 @@ namespace menu {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 
         const char* tabs[] = {
-            "Players", "Ships", "World", "View",
-            "Weapon", "Cannon", "Gameplay", "Server",
-            "Misc", "Skins", "Settings", "Account" };
+            "Players", "View", "Weapon", 
+            "Server", "Misc", "Settings" };
 
         ImGui::Begin("PirateFS Menu", &isOpen, flags);
         ImGui::BeginChild("##Sidebar", ImVec2(150, 0), true);
@@ -138,15 +148,6 @@ namespace menu {
             ImGui::Checkbox("Bone ESP", &features::bone_esp);
             ImGui::Checkbox("2D Box ESP", &features::box2d_esp);
             ImGui::Checkbox("3D Box ESP", &features::box3d_esp);
-            ImGui::Separator();
-            ImGui::Checkbox("Bunny Hop", &features::bhop);
-			ImGui::Checkbox("Enable Fly", &features::enable_fly);
-			ImGui::Checkbox("Infinite Ammo", &features::infinite_ammo);
-            ImGui::Checkbox("Gode Mode", &features::godmode);
-            ImGui::Checkbox("Magic Bullet", &features::enable_magicbullet);
-            ImGui::Separator();
-            ImGui::InputText("Spoofed Name", features::spoofed_name, sizeof(features::spoofed_name));
-			ImGui::Checkbox("Enable Name Spoofing", &features::spoof_name_enabled);
         }
         else if (strcmp(tabs[current_tab], "View") == 0) {
             ImGui::Checkbox("Enable FOV", &features::fov_enabled);
@@ -164,34 +165,39 @@ namespace menu {
             ImGui::SliderFloat("Aimbot FOV", &features::aimbot_fov, 10.0f, 500.0f);
             const char* aimModes[] = { "Closest to Crosshair", "Closest by Distance" };
             ImGui::Combo("Aimbot Type", &features::aimbot_type, aimModes, IM_ARRAYSIZE(aimModes));
+            ImGui::Separator();
+            ImGui::Checkbox("Infinite Ammo", &features::infinite_ammo);
+
         }
-        else if (strcmp(tabs[current_tab], "Ships") == 0) {
-            ImGui::Text("Ship Features");
-            // Add ship-related features here
+        else if (strcmp(tabs[current_tab], "Misc") == 0) {
+            ImGui::Checkbox("Bunny Hop", &features::bhop);
+			ImGui::Checkbox("Enable Fly", &features::enable_fly);
+            ImGui::Checkbox("Gode Mode", &features::godmode);
+			ImGui::Separator();
+            if (ImGui::Button("Get Sword")) {
+                SDK::UWorld* world = SDK::UWorld::GetWorld();
+                if (!world) return;
+
+                SDK::APlayerController* playerController = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
+                if (!playerController) return;
+
+                SDK::APawn* localPawn = playerController->AcknowledgedPawn;
+                if (!localPawn) return;
+
+                if (localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) {
+                    auto* gusPlayer = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
+                    if (features::infinite_ammo) {
+                        gusPlayer->Sword_Equppied = true;
+                    }
+                }
+            }
         }
-        else if (strcmp(tabs[current_tab], "World") == 0) {
-            ImGui::Text("World Features");
-            // Add world-related features here
-        }
-        else if (strcmp(tabs[current_tab], "Gameplay") == 0) {
-            ImGui::Text("Gameplay Features");
-            // Add gameplay-related features here
-        }
-        else if (strcmp(tabs[current_tab], "Skins") == 0) {
-            ImGui::Text("Skin Customization");
-            // Add skin customization options here
-        }
-        else if (strcmp(tabs[current_tab], "Settings") == 0) {
-            ImGui::Text("Settings");
-            // Add settings options here
-        }
-        else if (strcmp(tabs[current_tab], "Account") == 0) {
-            ImGui::Text("Account Management");
-            // Add account management options here
-		}
         else if (strcmp(tabs[current_tab], "Server") == 0) {
 			bool prestaEnabled = false;
             ImGui::Checkbox("Enable Presta d'Haikiu", &prestaEnabled);
+            ImGui::Separator();
+            ImGui::InputText("Spoofed Name", features::spoofed_name, sizeof(features::spoofed_name));
+            ImGui::Checkbox("Enable Name Spoofing", &features::spoof_name_enabled);
         }
         else {
             ImGui::Columns(3, nullptr, false);
