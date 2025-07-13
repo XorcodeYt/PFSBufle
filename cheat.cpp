@@ -1,6 +1,12 @@
 ﻿#include "cheat.h"
 #include "utils.h"
 #include <windows.h>
+#include "stdafx.h"
+
+void EatBananaViaProcessEvent(SDK::ATrainGusPlayer_C* gus)
+{
+    
+}
 
 namespace helper {
     inline float Vec3Size(const SDK::FVector& vec) {
@@ -102,6 +108,9 @@ bool cheat::Cheat::InitCheat()
 
     utils::Console::log("PirateFS-Win64-Shipping.exe found");
     utils::Console::log("[DLL IDENTIFIER] Build tag: V2025.07.12_20h18");
+    
+
+
     return true;
 }
 
@@ -114,7 +123,9 @@ void cheat::Cheat::RefreshCheat()
     if (!playerController) return;
 
     SDK::APawn* localPawn = playerController->AcknowledgedPawn;
-    if (!localPawn) return;
+    if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return; // si c pas un ATrainGusPlayer_C alors return
+
+    auto* gusPlayer = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
 
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 
@@ -352,86 +363,106 @@ void cheat::Cheat::RefreshCheat()
             }
         }
     }
-	// Infinite Ammo
-    if (localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) {
-        auto* gusPlayer = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
-        if (features::infinite_ammo) {
-            gusPlayer->Flintlock_ammo = 5;
-            gusPlayer->Eye_of_reach_ammo = 5;
-            gusPlayer->Blunderbuss_Ammo = 5;
+	// Infinite Ammo + supplies
+    if (features::infinite_ammo) {
+        gusPlayer->Flintlock_ammo = 5;
+        gusPlayer->Eye_of_reach_ammo = 5;
+        gusPlayer->Blunderbuss_Ammo = 5;
+    }
+    if (features::infinite_supplies) {
+        gusPlayer->Blunderbomb_Amount = 5;
+        gusPlayer->Bannana_Amount = 5;
+    }
+	// No Reload
+    if (features::no_reload) {
+        SDK::UWorld* world = SDK::UWorld::GetWorld();
+        if (!world) return;
+
+        SDK::APlayerController* playerController = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
+        if (!playerController) return;
+
+        SDK::APawn* localPawn = playerController->AcknowledgedPawn;
+        if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
+
+        auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
+
+        auto callFunction = [](SDK::UObject* obj, const char* name) {
+            SDK::UFunction* fn = SDK::UObject::FindObject<SDK::UFunction>(name);
+            if (fn && obj)
+                obj->ProcessEvent(fn, nullptr);
+            };
+
+        gus->Reloading = false;
+        gus->Is_Reload_ = false;
+        gus->Reload_time = 0.0;
+        gus->Loaded = true;
+        gus->CanFire_ = true;
+
+        if (gus->FlintlockFired) {
+            gus->Flintlock_Current_Timer = SDK::FTimerHandle{};
+            gus->IsReloadingFlintlock_ = false;
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading Flintlock");
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Flintlock Reload slot 2");
+            gus->FlintlockFired = false;
+        }
+
+        if (gus->EorFired) {
+            gus->Sniper_Current_Timer = SDK::FTimerHandle{};
+            gus->IsReloadingEOR_ = false;
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading EOR");
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish EOR Reload slot 2");
+            gus->EorFired = false;
+        }
+
+        if (gus->BlunderBussFired) {
+            gus->Blunderbuss_Current_Timer = SDK::FTimerHandle{};
+            gus->IsReloadingBlunderbuss_ = false;
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload");
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload slot 2");
+            gus->BlunderBussFired = false;
         }
     }
-	// Magic bullet
-    SDK::FVector2D dummyVec2;
-    SDK::ACharacter* target = GetBestTargetCharacter(playerController, localPawn, { 0, 0 }, dummyVec2);
-    if (!target) return;
+	// Demon Shoot
+    if (features::demon_shoot) {
+        static int fireFrameCounter = 0;
+        if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
+            fireFrameCounter++;
+            if (fireFrameCounter >= 5) {
+                fireFrameCounter = 0;
 
-    // Loop through all objects
-    for (int i = 0; i < SDK::UObject::GObjects->Num(); ++i)
-    {
-        SDK::UObject* obj = SDK::UObject::GObjects->GetByIndex(i);
-        if (!obj) continue;
+                auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
+                if (gus) {
+                    auto callFunction = [](SDK::UObject* obj, const char* name) {
+                        SDK::UFunction* fn = SDK::UObject::FindObject<SDK::UFunction>(name);
+                        if (fn && obj)
+                            obj->ProcessEvent(fn, nullptr);
+                        };
 
-        // === CLIENT SIDE ===
-        if (obj->IsA(SDK::AFlintlock_Projectile_Client_C::StaticClass()))
-        {
-            auto* proj = static_cast<SDK::AFlintlock_Projectile_Client_C*>(obj);
-            if (!proj || proj->Hit_Actor || proj->ImDone)
-                continue;
-
-            proj->Hit_Actor = target;
-            //proj->ImDone = true;
-
-            SDK::FVector targetLocation = target->K2_GetActorLocation();
-            SDK::FVector projLocation = proj->K2_GetActorLocation();
-
-            SDK::FHitResult& hit = proj->Hit_Result;
-            hit.bBlockingHit = true;
-            hit.bStartPenetrating = false;
-            hit.Time = 0.f;
-            hit.Distance = 0.f;
-            hit.Location = *reinterpret_cast<SDK::FVector_NetQuantize*>(&targetLocation);
-            hit.ImpactPoint = hit.Location;
-            SDK::FVector up = SDK::FVector(0.f, 0.f, 1.f);
-            hit.Normal = *reinterpret_cast<SDK::FVector_NetQuantizeNormal*>(&up);
-            hit.ImpactNormal = *reinterpret_cast<SDK::FVector_NetQuantizeNormal*>(&up);
-            hit.TraceStart = *reinterpret_cast<SDK::FVector_NetQuantize*>(&projLocation);
-            hit.TraceEnd = hit.Location;
-
-            utils::Console::log("[MAGIC BULLET CLIENT] Hit forced on: " + target->GetName());
+                    //callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_19");
+                    //callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_16");
+                    //callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_15");
+                }
+            }
         }
+	}
 
-        // === SERVER SIDE ===
-        if (obj->IsA(SDK::AFlintlock_Projectile_Server_C::StaticClass()))
-        {
-            auto* proj = static_cast<SDK::AFlintlock_Projectile_Server_C*>(obj);
-            if (!proj || proj->Hit_Actor || proj->ImDone)
-                continue;
-
-            proj->Hit_Actor = target;
-			proj->Actor = target;
-            proj->Hit_gentlemen = true;
-            //proj->ImDone = true;
-
-            SDK::FVector targetLocation = target->K2_GetActorLocation();
-            SDK::FVector projLocation = proj->K2_GetActorLocation();
-
-            SDK::FHitResult& hit = proj->Hit_Result;
-            hit.bBlockingHit = true;
-            hit.bStartPenetrating = false;
-            hit.Time = 0.f;
-            hit.Distance = 0.f;
-            hit.Location = *reinterpret_cast<SDK::FVector_NetQuantize*>(&targetLocation);
-            hit.ImpactPoint = hit.Location;
-            SDK::FVector up = SDK::FVector(0.f, 0.f, 1.f);
-            hit.Normal = *reinterpret_cast<SDK::FVector_NetQuantizeNormal*>(&up);
-            hit.ImpactNormal = *reinterpret_cast<SDK::FVector_NetQuantizeNormal*>(&up);
-            hit.TraceStart = *reinterpret_cast<SDK::FVector_NetQuantize*>(&projLocation);
-            hit.TraceEnd = hit.Location;
-
-            utils::Console::log("[MAGIC BULLET SERVER] Hit forced on: " + target->GetName());
+    if (features::enable_fly) {
+        if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
+            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            if (!world) return;
+            SDK::APlayerController* playerController = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
+            if (!playerController) return;
+            SDK::APawn* localPawn = playerController->AcknowledgedPawn;
+            if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
+            auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
+            gus->LaunchCharacter(SDK::FVector(0, 0, 1000), false, true);
         }
-    }
+	}
+    if (features::godmode) {
+        auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
+        gus->Dead_ = false;
+	}
+	//le fly c chiant mais l'idée c forcer le serv a te faire voler (RPC) ou pour que le host avec ReceiveActorBeginOverlap dans WaterLaunching_classes
 
     return;
 }

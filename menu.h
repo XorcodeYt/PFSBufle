@@ -17,6 +17,7 @@ namespace features {
 	
 	//misc
     extern bool bhop;
+    extern bool infinite_supplies;
     extern bool godmode; //marche po
     extern bool enable_fly; //marche po
 
@@ -35,6 +36,8 @@ namespace features {
     extern float aimbot_fov;
     extern int aimbot_type;
     extern bool infinite_ammo;
+    extern bool no_reload;
+    extern bool demon_shoot;
     extern bool enable_magicbullet; //marche po
 
 	//server
