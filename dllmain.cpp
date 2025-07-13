@@ -8,10 +8,6 @@ static DWORD WINAPI onAttach(LPVOID lpParameter)
     DebugLog("[DllMain] onAttach starting.\n");
 
     utils::Console::initConsole();
-    if (!cheat::Cheat::InitCheat()) {
-        utils::Setup::CleanupAndShutdown();
-        return 0;
-    }
 
     {
         MH_STATUS mhStatus = MH_Initialize();
@@ -21,6 +17,12 @@ static DWORD WINAPI onAttach(LPVOID lpParameter)
             return 1;
         }
         DebugLog("[DllMain] MinHook initialized.\n");
+    }
+
+
+    if (!cheat::Cheat::InitCheat()) {
+        utils::Setup::CleanupAndShutdown();
+        return 0;
     }
 
     hooks::Init();

@@ -3,42 +3,62 @@
 #include <windows.h>
 #include "stdafx.h"
 
-void EatBananaViaProcessEvent(SDK::ATrainGusPlayer_C* gus)
+// Forward declaration
+void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void* params);
+
+typedef void(__fastcall* tProcessEvent)(SDK::UObject*, SDK::UFunction*, void*);
+tProcessEvent oProcessEvent = nullptr;
+
+#include <functional>
+#include <vector>
+
+struct DelayedReloadCall {
+    int delay;
+    std::function<void()> func;
+};
+
+static std::vector<DelayedReloadCall> delayedCalls;
+
+void HookProcessEvent()
 {
-    
+    void** vtable = *(void***)(SDK::UObject::GObjects->GetByIndex(0));
+    if (!vtable) {
+        utils::Console::logError("[HOOK] Failed to get UObject vtable");
+        return;
+    }
+
+    void* target = vtable[75]; // ProcessEvent idx
+    utils::Console::log("[HOOK] VTable[75] = " + std::to_string((uintptr_t)target));
+
+    if (MH_CreateHook(target, &hkProcessEvent, reinterpret_cast<void**>(&oProcessEvent)) == MH_OK) {
+        MH_EnableHook(target);
+        utils::Console::log("[HOOK] ProcessEvent hooked successfully");
+    }
+    else {
+        utils::Console::logError("[HOOK] Failed to hook ProcessEvent");
+    }
 }
 
-namespace helper {
-    inline float Vec3Size(const SDK::FVector& vec) {
-        return sqrtf(vec.X * vec.X + vec.Y * vec.Y + vec.Z * vec.Z);
+void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void* params)
+{
+    if (!function || !oProcessEvent)
+        return;
+
+    const char* name = nullptr;
+    try {
+        name = function->GetFullName().c_str();
+    }
+    catch (...) {
+        utils::Console::logError("[HOOKED] Exception in GetFullName");
     }
 
-    inline SDK::FVector Vec3Normalize(const SDK::FVector& vec) {
-        float mag = Vec3Size(vec);
-        if (mag == 0.f) return SDK::FVector(0, 0, 0);
-        return SDK::FVector(vec.X / mag, vec.Y / mag, vec.Z / mag);
+    if (features::no_reload) {
+        //pass
     }
 
-    inline float Vec2Distance(const SDK::FVector2D& a, const SDK::FVector2D& b) {
-        float dx = a.X - b.X;
-        float dy = a.Y - b.Y;
-        return sqrtf(dx * dx + dy * dy);
-    }
 
-    inline float Vec3Distance(const SDK::FVector& a, const SDK::FVector& b) {
-        float dx = a.X - b.X;
-        float dy = a.Y - b.Y;
-        float dz = a.Z - b.Z;
-        return sqrtf(dx * dx + dy * dy + dz * dz);
-    }
-    inline SDK::FRotator VecToRotator(const SDK::FVector& vec)
-    {
-        SDK::FRotator rot;
-        rot.Pitch = -atan2f(vec.Z, sqrtf(vec.X * vec.X + vec.Y * vec.Y)) * (180.0f / 3.14159265f);
-        rot.Yaw = atan2f(vec.Y, vec.X) * (180.0f / 3.14159265f);
-        rot.Roll = 0.0f;
-        return rot;
-    }
+    // Call original
+    oProcessEvent(obj, function, params);
 }
 
 SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* localPawn, SDK::FVector2D screenCenter, SDK::FVector2D& outScreenPos)
@@ -96,7 +116,6 @@ SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* 
     return bestTarget;
 }
 
-
 bool cheat::Cheat::InitCheat()
 {
     HANDLE PFSModuleBase = GetModuleHandleA("PirateFS-Win64-Shipping.exe");
@@ -108,8 +127,10 @@ bool cheat::Cheat::InitCheat()
 
     utils::Console::log("PirateFS-Win64-Shipping.exe found");
     utils::Console::log("[DLL IDENTIFIER] Build tag: V2025.07.12_20h18");
-    
 
+    HookProcessEvent();
+
+    utils::Console::log("[MinHook] Hooks initialized");
 
     return true;
 }
@@ -128,6 +149,18 @@ void cheat::Cheat::RefreshCheat()
     auto* gusPlayer = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
 
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+
+	// Process delayed calls
+    for (int i = 0; i < delayedCalls.size(); ) {
+        delayedCalls[i].delay--;
+        if (delayedCalls[i].delay <= 0) {
+            delayedCalls[i].func();
+            delayedCalls.erase(delayedCalls.begin() + i);
+        }
+        else {
+            ++i;
+        }
+    }
 
     // FOV 
     if (features::fov_enabled) {
@@ -386,83 +419,63 @@ void cheat::Cheat::RefreshCheat()
 
         auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
 
-        auto callFunction = [](SDK::UObject* obj, const char* name) {
-            SDK::UFunction* fn = SDK::UObject::FindObject<SDK::UFunction>(name);
-            if (fn && obj)
-                obj->ProcessEvent(fn, nullptr);
-            };
-
         gus->Reloading = false;
         gus->Is_Reload_ = false;
         gus->Reload_time = 0.0;
         gus->Loaded = true;
         gus->CanFire_ = true;
 
-        if (gus->FlintlockFired) {
+        // Flintlock
+        if (gus->FlintlockFired || gus->IsReloadingFlintlock_) {
             gus->Flintlock_Current_Timer = SDK::FTimerHandle{};
             gus->IsReloadingFlintlock_ = false;
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading Flintlock");
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Flintlock Reload slot 2");
             gus->FlintlockFired = false;
+
+            delayedCalls.push_back({
+                1,
+                [gus]() {
+                    auto fn1 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading Flintlock");
+                    auto fn2 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Flintlock Reload slot 2");
+                    if (fn1) gus->ProcessEvent(fn1, nullptr);
+                    if (fn2) gus->ProcessEvent(fn2, nullptr);
+                }
+                });
         }
 
-        if (gus->EorFired) {
+        // Eye of Reach
+        if (gus->EorFired || gus->IsReloadingEOR_) {
             gus->Sniper_Current_Timer = SDK::FTimerHandle{};
             gus->IsReloadingEOR_ = false;
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading EOR");
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish EOR Reload slot 2");
             gus->EorFired = false;
+
+            delayedCalls.push_back({
+                1,
+                [gus]() {
+                    auto fn1 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading EOR");
+                    auto fn2 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish EOR Reload slot 2");
+                    if (fn1) gus->ProcessEvent(fn1, nullptr);
+                    if (fn2) gus->ProcessEvent(fn2, nullptr);
+                }
+                });
         }
 
-        if (gus->BlunderBussFired) {
+        // Blunderbuss
+        if (gus->BlunderBussFired || gus->IsReloadingBlunderbuss_) {
             gus->Blunderbuss_Current_Timer = SDK::FTimerHandle{};
             gus->IsReloadingBlunderbuss_ = false;
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload");
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload slot 2");
             gus->BlunderBussFired = false;
+
+            delayedCalls.push_back({
+                1,
+                [gus]() {
+                    auto fn1 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload");
+                    auto fn2 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload slot 2");
+                    if (fn1) gus->ProcessEvent(fn1, nullptr);
+                    if (fn2) gus->ProcessEvent(fn2, nullptr);
+                }
+                });
         }
     }
-	// Demon Shoot
-    if (features::demon_shoot) {
-        static int fireFrameCounter = 0;
-        if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
-            fireFrameCounter++;
-            if (fireFrameCounter >= 5) {
-                fireFrameCounter = 0;
-
-                auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
-                if (gus) {
-                    auto callFunction = [](SDK::UObject* obj, const char* name) {
-                        SDK::UFunction* fn = SDK::UObject::FindObject<SDK::UFunction>(name);
-                        if (fn && obj)
-                            obj->ProcessEvent(fn, nullptr);
-                        };
-
-                    //callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_19");
-                    //callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_16");
-                    //callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_15");
-                }
-            }
-        }
-	}
-
-    if (features::enable_fly) {
-        if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
-            SDK::UWorld* world = SDK::UWorld::GetWorld();
-            if (!world) return;
-            SDK::APlayerController* playerController = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
-            if (!playerController) return;
-            SDK::APawn* localPawn = playerController->AcknowledgedPawn;
-            if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
-            auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
-            gus->LaunchCharacter(SDK::FVector(0, 0, 1000), false, true);
-        }
-	}
-    if (features::godmode) {
-        auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
-        gus->Dead_ = false;
-	}
-	//le fly c chiant mais l'idée c forcer le serv a te faire voler (RPC) ou pour que le host avec ReceiveActorBeginOverlap dans WaterLaunching_classes
 
     return;
 }
