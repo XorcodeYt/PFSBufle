@@ -46,4 +46,11 @@ namespace helper {
         rot.Roll = 0.0f;
         return rot;
     }
+    template<typename T>
+    inline T* FindComponentByClass(SDK::AActor* actor) {
+        if (!actor) return nullptr;
+
+        auto* result = actor->GetComponentByClass(T::StaticClass());
+        return result ? static_cast<T*>(result) : nullptr;
+    }
 }

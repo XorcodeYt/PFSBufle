@@ -9,59 +9,7 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
 typedef void(__fastcall* tProcessEvent)(SDK::UObject*, SDK::UFunction*, void*);
 tProcessEvent oProcessEvent = nullptr;
 
-#include <functional>
-#include <vector>
-
-struct DelayedReloadCall {
-    int delay;
-    std::function<void()> func;
-};
-
-static std::vector<DelayedReloadCall> delayedCalls;
-
-void HookProcessEvent()
-{
-    void** vtable = *(void***)(SDK::UObject::GObjects->GetByIndex(0));
-    if (!vtable) {
-        utils::Console::logError("[HOOK] Failed to get UObject vtable");
-        return;
-    }
-
-    void* target = vtable[75]; // ProcessEvent idx
-    utils::Console::log("[HOOK] VTable[75] = " + std::to_string((uintptr_t)target));
-
-    if (MH_CreateHook(target, &hkProcessEvent, reinterpret_cast<void**>(&oProcessEvent)) == MH_OK) {
-        MH_EnableHook(target);
-        utils::Console::log("[HOOK] ProcessEvent hooked successfully");
-    }
-    else {
-        utils::Console::logError("[HOOK] Failed to hook ProcessEvent");
-    }
-}
-
-void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void* params)
-{
-    if (!function || !oProcessEvent)
-        return;
-
-    const char* name = nullptr;
-    try {
-        name = function->GetFullName().c_str();
-    }
-    catch (...) {
-        utils::Console::logError("[HOOKED] Exception in GetFullName");
-    }
-
-    if (features::no_reload) {
-        //pass
-    }
-
-
-    // Call original
-    oProcessEvent(obj, function, params);
-}
-
-SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* localPawn, SDK::FVector2D screenCenter, SDK::FVector2D& outScreenPos)
+SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* localPawn, SDK::FVector2D screenCenter, SDK::FVector2D& outScreenPos, int type, bool fov_enabled, float fov)
 {
     SDK::ACharacter* bestTarget = nullptr;
     float bestMetric = FLT_MAX;
@@ -89,10 +37,10 @@ SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* 
 
         float distToCrosshair = helper::Vec2Distance(screenPos, screenCenter);
 
-        if (features::aimbot_fov_enabled && features::aimbot_fov > 0.f && distToCrosshair > features::aimbot_fov)
+        if (fov_enabled && fov > 0.f && distToCrosshair > fov)
             continue;
 
-        if (features::aimbot_type == 0) // crosshair
+        if (type == 0) // crosshair
         {
             if (distToCrosshair < bestMetric)
             {
@@ -101,7 +49,7 @@ SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* 
                 outScreenPos = screenPos;
             }
         }
-        else if (features::aimbot_type == 1) // 3D distance
+        else if (type == 1) // 3D distance
         {
             float distToPlayer = helper::Vec3Size(boneWorld - localPos);
             if (distToPlayer < bestMetric)
@@ -114,6 +62,83 @@ SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* 
     }
 
     return bestTarget;
+}
+
+void HookProcessEvent()
+{
+    void** vtable = *(void***)(SDK::UObject::GObjects->GetByIndex(0));
+    if (!vtable) {
+        utils::Console::logError("[HOOK] Failed to get UObject vtable");
+        return;
+    }
+
+    void* target = vtable[75]; // ProcessEvent idx de offsets
+    utils::Console::log("[HOOK] VTable[75] = " + std::to_string((uintptr_t)target));
+
+    if (MH_CreateHook(target, &hkProcessEvent, reinterpret_cast<void**>(&oProcessEvent)) == MH_OK) {
+        MH_EnableHook(target);
+        utils::Console::log("[HOOK] ProcessEvent hooked successfully");
+    }
+    else {
+        utils::Console::logError("[HOOK] Failed to hook ProcessEvent");
+    }
+}
+
+void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void* params)
+{
+    if (!function || !oProcessEvent) return;
+
+    const std::string fname = function->GetFullName();
+
+    if (
+        fname.find("ReceiveBeginPlay") != std::string::npos &&
+        (
+            fname.find("FlintlockProjectile") != std::string::npos ||
+            fname.find("BlunderProjectile") != std::string::npos ||
+            fname.find("EyeOfReach_Projectile") != std::string::npos
+            )
+        )
+    {
+        // Cast en AActor
+        SDK::AActor* proj = static_cast<SDK::AActor*>(obj);
+        if (!proj) return;
+
+        SDK::UWorld* world = SDK::UWorld::GetWorld();
+        if (!world) return;
+
+        SDK::APlayerController* pc = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
+        if (!pc) return;
+
+        SDK::APawn* localPawn = pc->AcknowledgedPawn;
+        if (!localPawn) return;
+
+        if (features::enable_magicbullet) {
+
+            ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+
+            ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+
+            SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
+            SDK::FVector2D targetScreen;
+
+            SDK::ACharacter* bestTarget = GetBestTargetCharacter(pc, localPawn, screenCenterVec, targetScreen, features::magicbullet_type, features::magicbullet_fov_enabled, features::magicbullet_fov);
+            if (!bestTarget) return;
+
+            drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), 5.0f, IM_COL32(255, 0, 0, 255));
+
+            // Head pos
+            SDK::USkeletalMeshComponent* mesh = bestTarget->Mesh;
+            if (!mesh || mesh->GetNumBones() <= 2) return;
+
+            SDK::FVector headPos = mesh->GetSocketLocation(mesh->GetBoneName(2));
+        
+            // Teleport le projectile
+            SDK::FHitResult dummyHit;
+            proj->K2_SetActorLocation(headPos, false, &dummyHit, true);
+		}
+    }
+    // Continue normal ProcessEvent
+    oProcessEvent(obj, function, params);
 }
 
 bool cheat::Cheat::InitCheat()
@@ -150,18 +175,6 @@ void cheat::Cheat::RefreshCheat()
 
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 
-	// Process delayed calls
-    for (int i = 0; i < delayedCalls.size(); ) {
-        delayedCalls[i].delay--;
-        if (delayedCalls[i].delay <= 0) {
-            delayedCalls[i].func();
-            delayedCalls.erase(delayedCalls.begin() + i);
-        }
-        else {
-            ++i;
-        }
-    }
-
     // FOV 
     if (features::fov_enabled) {
 
@@ -181,7 +194,6 @@ void cheat::Cheat::RefreshCheat()
     }
 
     // Draw ESP for characters
-
     int boneLinks[][2] = {
         {6,5},{5,4},{4,3},{3,2},{2,1},{1,0},
         {11,10},{10,9},{9,8},{8,3},
@@ -189,7 +201,6 @@ void cheat::Cheat::RefreshCheat()
         {18,19},{19,20},{17,22},{22,23},{23,24},{24,25}
     };
     int linkCount = sizeof(boneLinks) / sizeof(boneLinks[0]);
-
     for (int i = 0; i < SDK::UObject::GObjects->Num(); ++i) {
         SDK::UObject* obj = SDK::UObject::GObjects->GetByIndex(i);
         if (!obj || !obj->IsA(SDK::ACharacter::StaticClass())) continue;
@@ -312,6 +323,7 @@ void cheat::Cheat::RefreshCheat()
             }
         }
     }
+
 	// Bunny Hop
     if (features::bhop && (GetAsyncKeyState(VK_SPACE) & 0x8000)) {
         SDK::UWorld* world = SDK::UWorld::GetWorld();
@@ -326,6 +338,7 @@ void cheat::Cheat::RefreshCheat()
             }
         }
     }
+
     // Crosshair
     if (features::crosshair_enabled) {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
@@ -341,16 +354,18 @@ void cheat::Cheat::RefreshCheat()
             drawList->AddLine(ImVec2(screenCenter.x, screenCenter.y - s), ImVec2(screenCenter.x, screenCenter.y + s), color, t);
         }
     }
+
 	// Aimbot
-    if (features::aimbot_fov_enabled ) {
+    if (features::aimbot_enabled) {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
 
         SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
         SDK::FVector2D targetScreen;
-        SDK::ACharacter* bestTarget = GetBestTargetCharacter(playerController, localPawn, screenCenterVec, targetScreen);
+        SDK::ACharacter* bestTarget = GetBestTargetCharacter(playerController, localPawn, screenCenterVec, targetScreen, features::aimbot_type, features::aimbot_fov_enabled, features::aimbot_fov);
 
         if (bestTarget)
         {
+			utils::Console::log("[AIMBOT] Target found: " + bestTarget->GetName());
             drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), 5.0f, IM_COL32(255, 0, 0, 255));
 
             if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000))
@@ -369,18 +384,18 @@ void cheat::Cheat::RefreshCheat()
                     SDK::APlayerCameraManager* cam = playerController->PlayerCameraManager;
                     if (cam)
                         cam->K2_SetActorRotation(aimRot, false);
-
-                    utils::Console::log("[AIMBOT] Aim applied: Pitch=" + std::to_string(aimRot.Pitch) + ", Yaw=" + std::to_string(aimRot.Yaw));
                 }
             }
         }
     }
 
-    if (features::aimbot_fov_enabled && features::aimbot_fov_enabled && features::aimbot_fov > 0.f)
+	// Draw Aimbot/MagicBullet FOV
+    if (features::aimbot_fov_enabled && features::aimbot_fov > 0.f or features::magicbullet_fov_enabled && features::magicbullet_fov > 0.0f)
     {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         drawList->AddCircle(screenCenter, features::aimbot_fov, IM_COL32(255, 255, 0, 180), 64, 1.5f);
     }
+
     static std::string lastSpoofedName = "";
 	// Name spoofing
     if (features::spoof_name_enabled) {
@@ -396,6 +411,7 @@ void cheat::Cheat::RefreshCheat()
             }
         }
     }
+
 	// Infinite Ammo + supplies
     if (features::infinite_ammo) {
         gusPlayer->Flintlock_ammo = 5;
@@ -406,6 +422,7 @@ void cheat::Cheat::RefreshCheat()
         gusPlayer->Blunderbomb_Amount = 5;
         gusPlayer->Bannana_Amount = 5;
     }
+
 	// No Reload
     if (features::no_reload) {
         SDK::UWorld* world = SDK::UWorld::GetWorld();
@@ -419,61 +436,40 @@ void cheat::Cheat::RefreshCheat()
 
         auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
 
+        auto callFunction = [](SDK::UObject* obj, const char* name) {
+            SDK::UFunction* fn = SDK::UObject::FindObject<SDK::UFunction>(name);
+            if (fn && obj)
+                obj->ProcessEvent(fn, nullptr);
+            };
+
         gus->Reloading = false;
         gus->Is_Reload_ = false;
         gus->Reload_time = 0.0;
         gus->Loaded = true;
         gus->CanFire_ = true;
 
-        // Flintlock
-        if (gus->FlintlockFired || gus->IsReloadingFlintlock_) {
+        if (gus->FlintlockFired or gus->IsReloadingFlintlock_) {
             gus->Flintlock_Current_Timer = SDK::FTimerHandle{};
             gus->IsReloadingFlintlock_ = false;
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading Flintlock");
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Flintlock Reload slot 2");
             gus->FlintlockFired = false;
-
-            delayedCalls.push_back({
-                1,
-                [gus]() {
-                    auto fn1 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading Flintlock");
-                    auto fn2 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Flintlock Reload slot 2");
-                    if (fn1) gus->ProcessEvent(fn1, nullptr);
-                    if (fn2) gus->ProcessEvent(fn2, nullptr);
-                }
-                });
         }
 
-        // Eye of Reach
-        if (gus->EorFired || gus->IsReloadingEOR_) {
+        if (gus->EorFired or gus->IsReloadingEOR_) {
             gus->Sniper_Current_Timer = SDK::FTimerHandle{};
             gus->IsReloadingEOR_ = false;
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading EOR");
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish EOR Reload slot 2");
             gus->EorFired = false;
-
-            delayedCalls.push_back({
-                1,
-                [gus]() {
-                    auto fn1 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading EOR");
-                    auto fn2 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish EOR Reload slot 2");
-                    if (fn1) gus->ProcessEvent(fn1, nullptr);
-                    if (fn2) gus->ProcessEvent(fn2, nullptr);
-                }
-                });
         }
 
-        // Blunderbuss
-        if (gus->BlunderBussFired || gus->IsReloadingBlunderbuss_) {
+        if (gus->BlunderBussFired or gus->IsReloadingBlunderbuss_) {
             gus->Blunderbuss_Current_Timer = SDK::FTimerHandle{};
             gus->IsReloadingBlunderbuss_ = false;
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload");
+            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload slot 2");
             gus->BlunderBussFired = false;
-
-            delayedCalls.push_back({
-                1,
-                [gus]() {
-                    auto fn1 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload");
-                    auto fn2 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload slot 2");
-                    if (fn1) gus->ProcessEvent(fn1, nullptr);
-                    if (fn2) gus->ProcessEvent(fn2, nullptr);
-                }
-                });
         }
     }
 

@@ -30,11 +30,14 @@ namespace features {
     bool aimbot_enabled = false;
     bool aimbot_fov_enabled = false;
     float aimbot_fov = 90.0f;
-    int aimbot_type = 0;
+    int aimbot_type = 0; // 0: Closest to Crosshair, 1: Closest by Distance
     bool infinite_ammo = false;
 	bool no_reload = false;
-	bool demon_shoot = false;
-    bool enable_magicbullet = false; // marche po
+	bool demon_shoot = false; //marche po
+    bool enable_magicbullet = false;
+	bool magicbullet_fov_enabled = false;
+    float magicbullet_fov = 90.0f;
+	int magicbullet_type = 0; // 0: Closest to Crosshair, 1: Closest by Distance
 
     // server
     bool spoof_name_enabled = false;
@@ -165,14 +168,21 @@ namespace menu {
         else if (strcmp(tabs[current_tab], "Weapon") == 0) {
             ImGui::Checkbox("Enable Aimbot", &features::aimbot_enabled);
             ImGui::Checkbox("Use Aimbot FOV Limit", &features::aimbot_fov_enabled);
-            ImGui::SliderFloat("Aimbot FOV", &features::aimbot_fov, 10.0f, 500.0f);
+            ImGui::SliderFloat("Aimbot FOV", &features::aimbot_fov, 10.0f, 1000.0f);
             const char* aimModes[] = { "Closest to Crosshair", "Closest by Distance" };
             ImGui::Combo("Aimbot Type", &features::aimbot_type, aimModes, IM_ARRAYSIZE(aimModes));
             ImGui::Separator();
-            ImGui::Checkbox("Infinite Ammo + Supplies", &features::infinite_ammo);
+            ImGui::Checkbox("Infinite Ammo", &features::infinite_ammo);
 			ImGui::Checkbox("No Reload", &features::no_reload);
 			ImGui::Checkbox("Enable Demon Shoot", &features::demon_shoot);  
             ImGui::Checkbox("Enable Magic Bullet", &features::enable_magicbullet);
+			ImGui::Separator();
+            const char* bulletsModes[] = { "Closest to Crosshair", "Closest by Distance" };
+            ImGui::Checkbox("Use Magic Bullet FOV Limit", &features::magicbullet_fov_enabled);
+            ImGui::SliderFloat("Magic Bullet FOV", &features::magicbullet_fov, 10.0f, 1000.0f);
+            const char* MbModes[] = { "Closest to Crosshair", "Closest by Distance" };
+            ImGui::Combo("Magic Bullet Type", &features::magicbullet_type, MbModes, IM_ARRAYSIZE(bulletsModes));
+
         }
         else if (strcmp(tabs[current_tab], "Misc") == 0) {
             ImGui::Checkbox("Bunny Hop", &features::bhop);

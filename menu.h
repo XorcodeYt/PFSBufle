@@ -37,8 +37,11 @@ namespace features {
     extern int aimbot_type;
     extern bool infinite_ammo;
     extern bool no_reload;
-    extern bool demon_shoot;
-    extern bool enable_magicbullet; //marche po
+    extern bool demon_shoot; //marche po
+    extern bool enable_magicbullet;
+	extern bool magicbullet_fov_enabled;
+	extern float magicbullet_fov;
+    extern int magicbullet_type;
 
 	//server
     extern bool spoof_name_enabled;
