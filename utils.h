@@ -23,6 +23,13 @@ namespace utils
 			freopen_s(&f, "CONOUT$", "w", stderr);
 
 			SetConsoleTitleA(consoleTitle.c_str());
+
+			HWND hConsole = GetConsoleWindow();
+			if (hConsole)
+			{
+				ShowWindow(hConsole, SW_SHOW);
+				ShowWindow(hConsole, SW_MINIMIZE);
+			}
 		}
 
 		static inline void closeConsole()

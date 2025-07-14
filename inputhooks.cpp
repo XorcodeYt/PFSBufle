@@ -43,4 +43,6 @@ namespace inputhook {
 
         return CallWindowProc(sOriginalWndProc, hwnd, uMsg, wParam, lParam);
     }
+
 }
+

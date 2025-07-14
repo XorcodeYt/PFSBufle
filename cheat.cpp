@@ -124,7 +124,7 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
 
         SDK::APawn* localPawn = pc->AcknowledgedPawn;
         if (!localPawn) return;
-
+		//magic bullet
         if (features::enable_magicbullet) {
 
             ImDrawList* drawList = ImGui::GetBackgroundDrawList();
@@ -134,23 +134,17 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
             SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
             SDK::FVector2D targetScreen;
 
-            SDK::ACharacter* bestTarget = GetBestTargetCharacter(pc, localPawn, screenCenterVec, targetScreen, features::magicbullet_type, features::magicbullet_fov_enabled, features::magicbullet_fov);
+            SDK::ACharacter* bestTarget = GetBestTargetCharacter(pc, localPawn, screenCenterVec, targetScreen, features::aimbot_type, features::aimbot_fov_enabled, features::aimbot_fov);
             if (!bestTarget) return;
 
-            drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), 5.0f, IM_COL32(255, 0, 0, 255));
-
-            // Head pos
             SDK::USkeletalMeshComponent* mesh = bestTarget->Mesh;
             if (!mesh || mesh->GetNumBones() <= 2) return;
 
             SDK::FVector headPos = mesh->GetSocketLocation(mesh->GetBoneName(2));
         
-            // Teleport le projectile
             SDK::FHitResult dummyHit;
             proj->K2_SetActorLocation(headPos, false, &dummyHit, true);
 		}
-
-
     }
     // Continue normal ProcessEvent
     oProcessEvent(obj, function, params);
@@ -381,9 +375,6 @@ void cheat::Cheat::RefreshCheat()
 
         if (bestTarget)
         {
-			utils::Console::log("[AIMBOT] Target found: " + bestTarget->GetName());
-            drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), 5.0f, featurescolors::Aimbot_dot_color);
-
             if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000))
             {
                 SDK::USkeletalMeshComponent* mesh = bestTarget->Mesh;
@@ -405,8 +396,20 @@ void cheat::Cheat::RefreshCheat()
         }
     }
 
+	// Draw selected player
+    if (features::show_selected_player && features::aimbot_enabled or features::enable_magicbullet) {
+        ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+        SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
+        SDK::FVector2D targetScreen;
+        SDK::ACharacter* bestTarget = GetBestTargetCharacter(playerController, localPawn, screenCenterVec, targetScreen, features::aimbot_type, features::aimbot_fov_enabled, features::aimbot_fov);
+        if (bestTarget)
+        {
+            drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), features::selected_player_size, featurescolors::Aimbot_dot_color);
+        }
+	}
+
 	// Draw Aimbot/MagicBullet FOV
-    if (features::aimbot_fov_enabled && features::aimbot_fov > 0.f or features::magicbullet_fov_enabled && features::magicbullet_fov > 0.0f)
+    if (features::aimbot_fov_enabled && features::aimbot_fov > 0.f)
     {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         drawList->AddCircle(screenCenter, features::aimbot_fov, featurescolors::Aimbot_FOV_color, 64, 1.5f);

@@ -9,17 +9,9 @@
 
 namespace menu {
     extern bool isOpen;
-    void Init();
-    void ResetAnimation();
-    extern bool isOpen;
     extern bool noTitleBar;
-    extern float anim_progress;
-    extern float anim_speed;
-    extern bool animating;
-    extern bool wasOpen;
+    void Init();
 }
-
-
 
 namespace features {
     //player features   
@@ -43,16 +35,16 @@ namespace features {
 
     //weapon
     extern bool aimbot_enabled;
+    extern bool enable_magicbullet;
+	extern bool show_selected_player;
+	extern float selected_player_size;
     extern bool aimbot_fov_enabled;
     extern float aimbot_fov;
     extern int aimbot_type;
     extern bool infinite_ammo;
     extern bool no_reload;
     extern bool demon_shoot; //marche po
-    extern bool enable_magicbullet;
-    extern bool magicbullet_fov_enabled;
-    extern float magicbullet_fov;
-    extern int magicbullet_type;
+    
 
     //server
     extern bool spoof_name_enabled;

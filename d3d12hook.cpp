@@ -35,7 +35,15 @@ namespace d3d12hook {
     long __fastcall hookPresentD3D12(IDXGISwapChain3* pSwapChain, UINT SyncInterval, UINT Flags) {
         if (GetAsyncKeyState(globals::openMenuKey) & 1) {
             menu::isOpen = !menu::isOpen;
-            DebugLog("[d3d12hook] Toggle menu: isOpen=%d\n", menu::isOpen);
+
+            /*static bool lastMenuState = false;
+            if (menu::isOpen != lastMenuState) {
+                ImGuiIO& io = ImGui::GetIO();
+                io.MouseDrawCursor = false;
+
+                ::ShowCursor(menu::isOpen);
+                lastMenuState = menu::isOpen;
+            }*/
         }
 
         if (!gInitialized) {
@@ -110,21 +118,18 @@ namespace d3d12hook {
         {
             ImGui_ImplDX12_NewFrame();
             ImGui_ImplWin32_NewFrame();
+
             ImGui::NewFrame();
+
             ImGuiIO& io = ImGui::GetIO();
-            io.MouseDrawCursor = menu::isOpen;
+            io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+            io.MouseDrawCursor = false;
 
-            if (menu::isOpen) {
-                menu::Init();
-                while (ShowCursor(FALSE) >= 0);
-                ReleaseCapture();
-            }
-            else {
-                while (ShowCursor(FALSE) >= 0);
-                SetCapture(desc.OutputWindow);
-            }
+            menu::Init();
+            cheat::Cheat::RefreshCheat();
 
-			cheat::Cheat::RefreshCheat(); // Call to refresh cheat features
+            ImGui::Render();
+            ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), gCommandList);
 
             UINT frameIdx = pSwapChain->GetCurrentBackBufferIndex();
             FrameContext& ctx = gFrameContexts[frameIdx];
