@@ -2,12 +2,15 @@
 #include "utils.h"
 #include <windows.h>
 #include "stdafx.h"
+#include <unordered_set>
 
 // Forward declaration
 void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void* params);
 
 typedef void(__fastcall* tProcessEvent)(SDK::UObject*, SDK::UFunction*, void*);
 tProcessEvent oProcessEvent = nullptr;
+
+std::unordered_set<std::string> loggedFunctions;
 
 SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* localPawn, SDK::FVector2D screenCenter, SDK::FVector2D& outScreenPos, int type, bool fov_enabled, float fov)
 {
@@ -103,6 +106,17 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
 
     const std::string fname = function->GetFullName();
 
+    if (fname.find("InpActEvt_Fire") != std::string::npos)
+    {
+        struct {
+            SDK::FKey Key_0;
+        }*keyStruct = reinterpret_cast<decltype(keyStruct)>(params);
+
+        int keyIndex = keyStruct->Key_0.KeyName.ComparisonIndex;
+        utils::Console::log("Fire Key Index = " + std::to_string(keyIndex));
+    }
+
+    // Magic bullet sur les projectiles
     if (
         fname.find("ReceiveBeginPlay") != std::string::npos &&
         (
@@ -113,7 +127,6 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
             )
         )
     {
-        // Cast en AActor
         SDK::AActor* proj = static_cast<SDK::AActor*>(obj);
         if (!proj) return;
 
@@ -125,13 +138,11 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
 
         SDK::APawn* localPawn = pc->AcknowledgedPawn;
         if (!localPawn) return;
-		//magic bullet
-        if (features::enable_magicbullet) {
 
+        if (features::enable_magicbullet) {
             ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 
             ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-
             SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
             SDK::FVector2D targetScreen;
 
@@ -139,20 +150,17 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
             if (!bestTarget) return;
 
             SDK::FVector targetPos = bestTarget->K2_GetActorLocation();
-            targetPos.Z += 30.f;  // élève au-dessus du joueur
+            targetPos.Z += 30.f;
 
-            // Set la position du projectile
             SDK::FHitResult dummyHit;
             proj->K2_SetActorLocation(targetPos, false, &dummyHit, true);
 
-            // Crée une rot vers le haut
-            SDK::FRotator upRot = { -90.f, 0.f, 0.f };  // Pitch -90 = haut
-
-            // Applique la rot
+            SDK::FRotator upRot = { -90.f, 0.f, 0.f };
             proj->K2_SetActorRotation(upRot, false);
-		}
+        }
     }
-    // Continue normal ProcessEvent
+
+    // Appel original
     oProcessEvent(obj, function, params);
 }
 
@@ -570,30 +578,44 @@ void cheat::Cheat::RefreshCheat()
         gus->LaunchCharacter(launchVelocity, overrideXY, overrideZ); //trouver la mm mais exec server side
 	}
 
-    SDK::ULevel* level = world->PersistentLevel;
-    if (!level) return;
+    if (features::demon_shoot && (GetAsyncKeyState(VK_LBUTTON) & 0x8000)) // Left mouse button held
+    {
+        static SDK::UFunction* fireFunc_19 = nullptr;
+        static SDK::UFunction* fireFunc_16 = nullptr;
+        static SDK::UFunction* fireFunc_15 = nullptr;
 
-    for (int i = 0; i < level->Actors.Num(); ++i) {
-        SDK::AActor* actor = level->Actors[i];
-        if (!actor) continue;
+        if (!fireFunc_19)
+            fireFunc_19 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_19");
+        if (!fireFunc_16)
+            fireFunc_16 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_16");
+        if (!fireFunc_15)
+            fireFunc_15 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_15");
 
-        // Récupérer le RootComponent
-        SDK::USceneComponent* root = actor->RootComponent;
-        if (!root) continue;
+        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) // maintenu
+        {
+            struct {
+                SDK::FKey Key_0;
+            } param;
+            param.Key_0.KeyName.ComparisonIndex = 84820;
 
-        utils::Console::log("RootComponent: " + root->GetFullName());
+            static SDK::UFunction* fireFunc_19 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_19");
+            static SDK::UFunction* fireFunc_16 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_16");
+            static SDK::UFunction* fireFunc_15 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_15");
 
-        // Récupérer tous les children (USceneComponent)
-        SDK::TArray<SDK::USceneComponent*> children;
-        root->GetChildrenComponents(true, &children);  // ← la bonne syntaxe ici
+            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            if (!world) return;
 
-        for (int j = 0; j < children.Num(); ++j) {
-            SDK::USceneComponent* child = children[j];
-            if (!child) continue;
+            SDK::APlayerController* pc = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
+            if (!pc) return;
 
-            utils::Console::log(" - Child SceneComponent: " + child->GetFullName());
+            SDK::APawn* localPawn = pc->AcknowledgedPawn;
+            if (!localPawn) return;
+
+            if (fireFunc_19) localPawn->ProcessEvent(fireFunc_19, &param);
+            if (fireFunc_16) localPawn->ProcessEvent(fireFunc_16, &param);
+            if (fireFunc_15) localPawn->ProcessEvent(fireFunc_15, &param);
         }
-    }
-
+	}
+    
     return;
 }
