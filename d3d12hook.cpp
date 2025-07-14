@@ -148,7 +148,7 @@ namespace d3d12hook {
 
             menu::Init();
 
-            cheat::Cheat::RefreshCheat();
+            //cheat::Cheat::RefreshCheat();
 
             ImGui::Render();
 

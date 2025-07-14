@@ -9,6 +9,9 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
 typedef void(__fastcall* tProcessEvent)(SDK::UObject*, SDK::UFunction*, void*);
 tProcessEvent oProcessEvent = nullptr;
 
+typedef void(__fastcall* tPostRender)(SDK::UGameViewportClient*, void*, SDK::UCanvas*);
+tPostRender oPostRender = nullptr;
+
 SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* localPawn, SDK::FVector2D screenCenter, SDK::FVector2D& outScreenPos, int type, bool fov_enabled, float fov)
 {
     SDK::ACharacter* bestTarget = nullptr;
@@ -150,6 +153,48 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
     oProcessEvent(obj, function, params);
 }
 
+void __fastcall hkPostRender(SDK::UGameViewportClient* viewport, void*, SDK::UCanvas* canvas)
+{
+    static bool confirmed = false;
+    if (!confirmed && canvas)
+    {
+        utils::Console::log(" canvas ptr = " + helper::HexStr(reinterpret_cast<uintptr_t>(canvas)));
+        confirmed = true;
+    }
+
+    cheat::Cheat::RefreshCheat();
+
+    oPostRender(viewport, nullptr, canvas);
+}
+
+void HookPostRender()
+{
+    SDK::UWorld* world = SDK::UWorld::GetWorld();
+    if (!world) return;
+
+    SDK::UGameInstance* gameInstance = world->OwningGameInstance;
+    if (!gameInstance || gameInstance->LocalPlayers.Num() == 0) return;
+
+    SDK::ULocalPlayer* localPlayer = gameInstance->LocalPlayers[0];
+    if (!localPlayer || !localPlayer->ViewportClient) return;
+
+    SDK::UGameViewportClient* viewportClient = localPlayer->ViewportClient;
+    void** vtable = *reinterpret_cast<void***>(viewportClient);
+
+    void* postRenderIDX = vtable[90];
+    utils::Console::log("[HOOK] Using vtable[90] = " + helper::HexStr(postRenderIDX));
+
+    if (MH_CreateHook(postRenderIDX, &hkPostRender, reinterpret_cast<void**>(&oPostRender)) == MH_OK)
+    {
+        MH_EnableHook(postRenderIDX);
+        utils::Console::log("[+] PostRender hooked successfully at " + helper::HexStr(postRenderIDX));
+    }
+    else
+    {
+        utils::Console::logError("[-] Failed to hook PostRender");
+    }
+}
+
 bool cheat::Cheat::InitCheat()
 {
     HANDLE PFSModuleBase = GetModuleHandleA("PirateFS-Win64-Shipping.exe");
@@ -163,6 +208,7 @@ bool cheat::Cheat::InitCheat()
     utils::Console::log("[DLL IDENTIFIER] Build tag: V2025.07.12_20h18");
 
     HookProcessEvent();
+    HookPostRender();
 
     utils::Console::log("[MinHook] Hooks initialized");
 

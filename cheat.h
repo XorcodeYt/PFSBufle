@@ -4,6 +4,7 @@
 #include "ImGui/imgui_impl_dx12.h"
 #include "ImGui/imgui_impl_win32.h"
 #include <fstream>
+#include <sstream>
 #include <unordered_set>
 
 namespace cheat {
@@ -52,5 +53,14 @@ namespace helper {
 
         auto* result = actor->GetComponentByClass(T::StaticClass());
         return result ? static_cast<T*>(result) : nullptr;
+    }
+    inline std::string HexStr(uintptr_t address)
+    {
+        std::stringstream stream;
+        stream << "0x" << std::hex << std::uppercase << address;
+        return stream.str();
+    }
+    inline std::string HexStr(void* ptr) {
+        return HexStr(reinterpret_cast<uintptr_t>(ptr));
     }
 }
