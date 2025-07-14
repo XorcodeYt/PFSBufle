@@ -1,6 +1,7 @@
 ﻿#include "stdafx.h"
 #include "menu.h"
 #include <algorithm>
+#include "config.h"
 
 static ImVec4 lastColor = featurescolors::generalcolor;
 namespace features {
@@ -243,6 +244,34 @@ namespace menu {
         }
         else if (strcmp(tabs[current_tab], "Settings") == 0) {
             DrawCoolSelector("General color", featurescolors::generalcolor);
+            ImGui::Separator();
+            static char newConfigName[64] = "default";
+
+            // Saisie du nom de config
+            ImGui::InputText("Config name", newConfigName, IM_ARRAYSIZE(newConfigName));
+            ImGui::Separator();
+
+            // Boutons de gestion
+            if (ImGui::Button("Save Config")) config::Save(newConfigName);
+            ImGui::SameLine();
+            if (ImGui::Button("Load Config")) config::Load(newConfigName);
+            ImGui::SameLine();
+            if (ImGui::Button("Delete Config")) config::Delete(newConfigName);
+            ImGui::Separator();
+
+            // Liste des configs disponibles
+            ImGui::Text("Available Configs:");
+            auto configs = config::ListConfigs();
+            if (configs.empty()) {
+                ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "No configs found.");
+            }
+            else {
+                for (auto& cfg : configs) {
+                    if (ImGui::Selectable(cfg.c_str())) {
+                        strcpy_s(newConfigName, cfg.c_str());
+                    }
+                }
+            }
         }
 
         ImGui::EndChild();

@@ -51,6 +51,17 @@ namespace features {
     extern char spoofed_name[64];
 }
 
+namespace featurescolors {
+    inline ImVec4 generalcolor = ImVec4(1.0f, 0.55f, 0.2f, 1.0f);
+    inline ImVec4 crosshair_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    inline ImU32 Bones_color = IM_COL32(255, 255, 255, 255);
+    inline ImU32 box_color3D = IM_COL32(255, 255, 255, 255);
+    inline ImU32 box_color2D = IM_COL32(255, 255, 255, 255);
+    inline ImU32 Aimbot_FOV_color = IM_COL32(255, 255, 255, 255);
+    inline ImU32 Aimbot_dot_color = IM_COL32(255, 255, 255, 255);
+    inline ImU32 Bullet_color = IM_COL32(255, 255, 255, 255);
+    inline ImU32 generalcolorU32 = ImGui::ColorConvertFloat4ToU32(generalcolor);
+}
 
 inline void DrawCoolSelector(const char* label, ImVec4& color)
 {
@@ -133,22 +144,10 @@ inline void DrawCoolSelectorU32(const char* label, ImU32& color)
     ImGui::PopID();
 }
 
-
-namespace featurescolors {
-    inline ImVec4 generalcolor = ImVec4(1.0f, 0.55f, 0.2f, 1.0f);
-    inline ImVec4 crosshair_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-    inline ImU32 Bones_color = IM_COL32(255, 255, 255, 255);
-    inline ImU32 box_color3D = IM_COL32(255, 255, 255, 255);
-    inline ImU32 box_color2D = IM_COL32(255, 255, 255, 255);
-    inline ImU32 Aimbot_FOV_color = IM_COL32(255, 255, 255, 255);
-    inline ImU32 Aimbot_dot_color = IM_COL32(255, 255, 255, 255);
-    inline ImU32 Bullet_color = IM_COL32(255, 255, 255, 255);
-    inline ImU32 generalcolorU32 = ImGui::ColorConvertFloat4ToU32(generalcolor);
-}
-
 inline float Clamp01(float value) {
     return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
 }
+
 inline bool CustomRoundedSlider(const char* label, float* value, float min, float max, const ImVec2& size = ImVec2(300, 6), ImU32 fill_color = IM_COL32(255, 0, 0, 255))
 {
     ImVec2 pos = ImGui::GetCursorScreenPos();
