@@ -63,4 +63,15 @@ namespace helper {
     inline std::string HexStr(void* ptr) {
         return HexStr(reinterpret_cast<uintptr_t>(ptr));
     }
+    template<typename T>
+    struct TArray {
+        T* Data;
+        int32_t Count;
+        int32_t Max;
+
+        int Num() const { return Count; }
+        T& operator[](int i) { return Data[i]; }
+        const T& operator[](int i) const { return Data[i]; }
+    };
+
 }

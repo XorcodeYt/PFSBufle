@@ -9,9 +9,6 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
 typedef void(__fastcall* tProcessEvent)(SDK::UObject*, SDK::UFunction*, void*);
 tProcessEvent oProcessEvent = nullptr;
 
-typedef void(__fastcall* tPostRender)(SDK::UGameViewportClient*, void*, SDK::UCanvas*);
-tPostRender oPostRender = nullptr;
-
 SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* localPawn, SDK::FVector2D screenCenter, SDK::FVector2D& outScreenPos, int type, bool fov_enabled, float fov)
 {
     SDK::ACharacter* bestTarget = nullptr;
@@ -34,7 +31,7 @@ SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* 
         auto* trainPlayer = reinterpret_cast<SDK::ATrainGusPlayer_C*>(character);
         if (!trainPlayer) continue;
 
-        if (trainPlayer->IsDead_) continue;
+        if (trainPlayer->IsDead_ || trainPlayer->Current_Health < 1) continue;
 
         auto* mesh = character->Mesh;
         if (!mesh || mesh->GetNumBones() <= 2) continue;
@@ -109,6 +106,7 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
     if (
         fname.find("ReceiveBeginPlay") != std::string::npos &&
         (
+            fname.find("Flintlock_Projectile") != std::string::npos ||
             fname.find("FlintlockProjectile") != std::string::npos ||
             fname.find("BlunderProjectile") != std::string::npos ||
             fname.find("EyeOfReach_Projectile") != std::string::npos
@@ -140,59 +138,22 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
             SDK::ACharacter* bestTarget = GetBestTargetCharacter(pc, localPawn, screenCenterVec, targetScreen, features::aimbot_type, features::aimbot_fov_enabled, features::aimbot_fov);
             if (!bestTarget) return;
 
-            SDK::USkeletalMeshComponent* mesh = bestTarget->Mesh;
-            if (!mesh || mesh->GetNumBones() <= 2) return;
+            SDK::FVector targetPos = bestTarget->K2_GetActorLocation();
+            targetPos.Z += 30.f;  // élève au-dessus du joueur
 
-            SDK::FVector headPos = mesh->GetSocketLocation(mesh->GetBoneName(2));
-        
+            // Set la position du projectile
             SDK::FHitResult dummyHit;
-            proj->K2_SetActorLocation(headPos, false, &dummyHit, true);
+            proj->K2_SetActorLocation(targetPos, false, &dummyHit, true);
+
+            // Crée une rot vers le haut
+            SDK::FRotator upRot = { -90.f, 0.f, 0.f };  // Pitch -90 = haut
+
+            // Applique la rot
+            proj->K2_SetActorRotation(upRot, false);
 		}
     }
     // Continue normal ProcessEvent
     oProcessEvent(obj, function, params);
-}
-
-void __fastcall hkPostRender(SDK::UGameViewportClient* viewport, void*, SDK::UCanvas* canvas)
-{
-    static bool confirmed = false;
-    if (!confirmed && canvas)
-    {
-        utils::Console::log(" canvas ptr = " + helper::HexStr(reinterpret_cast<uintptr_t>(canvas)));
-        confirmed = true;
-    }
-
-    cheat::Cheat::RefreshCheat();
-
-    oPostRender(viewport, nullptr, canvas);
-}
-
-void HookPostRender()
-{
-    SDK::UWorld* world = SDK::UWorld::GetWorld();
-    if (!world) return;
-
-    SDK::UGameInstance* gameInstance = world->OwningGameInstance;
-    if (!gameInstance || gameInstance->LocalPlayers.Num() == 0) return;
-
-    SDK::ULocalPlayer* localPlayer = gameInstance->LocalPlayers[0];
-    if (!localPlayer || !localPlayer->ViewportClient) return;
-
-    SDK::UGameViewportClient* viewportClient = localPlayer->ViewportClient;
-    void** vtable = *reinterpret_cast<void***>(viewportClient);
-
-    void* postRenderIDX = vtable[90];
-    utils::Console::log("[HOOK] Using vtable[90] = " + helper::HexStr(postRenderIDX));
-
-    if (MH_CreateHook(postRenderIDX, &hkPostRender, reinterpret_cast<void**>(&oPostRender)) == MH_OK)
-    {
-        MH_EnableHook(postRenderIDX);
-        utils::Console::log("[+] PostRender hooked successfully at " + helper::HexStr(postRenderIDX));
-    }
-    else
-    {
-        utils::Console::logError("[-] Failed to hook PostRender");
-    }
 }
 
 bool cheat::Cheat::InitCheat()
@@ -205,10 +166,9 @@ bool cheat::Cheat::InitCheat()
     }
 
     utils::Console::log("PirateFS-Win64-Shipping.exe found");
-    utils::Console::log("[DLL IDENTIFIER] Build tag: V2025.07.12_20h18");
+    utils::Console::log("[DLL IDENTIFIER] Build tag: V" __DATE__ " " __TIME__);
 
     HookProcessEvent();
-    HookPostRender();
 
     utils::Console::log("[MinHook] Hooks initialized");
 
@@ -224,7 +184,7 @@ void cheat::Cheat::RefreshCheat()
     if (!playerController) return;
 
     SDK::APawn* localPawn = playerController->AcknowledgedPawn;
-    if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return; // si c pas un ATrainGusPlayer_C alors return
+    if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
 
     auto* gusPlayer = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
 
@@ -266,6 +226,11 @@ void cheat::Cheat::RefreshCheat()
         std::string charName = character->GetName();
         if (charName.find("TrainGusPlayer") == std::string::npos) continue;
         if (charName.find("Default") != std::string::npos) continue;
+
+        auto* trainPlayer = reinterpret_cast<SDK::ATrainGusPlayer_C*>(character);
+        if (!trainPlayer) continue;
+
+        if (trainPlayer->IsDead_ || trainPlayer->Current_Health < 1) continue;
 
         SDK::USkeletalMeshComponent* mesh = character->Mesh;
         if (!mesh) continue;
@@ -378,6 +343,35 @@ void cheat::Cheat::RefreshCheat()
                 drawList->AddLine(p1, p2, featurescolors::box_color3D, 1.5f);
             }
         }
+        if (features::health_bar) {
+            SDK::FVector headPos = mesh->GetSocketLocation(mesh->GetBoneName(8)); // Cou / chest
+            SDK::FVector footPos = mesh->GetSocketLocation(mesh->GetBoneName(0)); // Pieds
+
+            SDK::FVector2D screenHead, screenFoot;
+            if (playerController->ProjectWorldLocationToScreen(headPos, &screenHead, false) &&
+                playerController->ProjectWorldLocationToScreen(footPos, &screenFoot, false)) {
+
+                float height = screenFoot.Y - screenHead.Y;
+                float barHeight = height;
+                float barWidth = 5.0f;
+                float x = screenHead.X - 10.0f; // Décalage gauche
+
+                float raw = trainPlayer->Current_Health / 100.0f;
+                float percent = raw < 0.f ? 0.f : (raw > 1.f ? 1.f : raw);
+                float filled = barHeight * percent;
+
+                ImVec2 barTop = ImVec2(x, screenHead.Y);
+                ImVec2 barBottom = ImVec2(x + barWidth, screenFoot.Y);
+                ImVec2 filledTop = ImVec2(x, screenFoot.Y - filled);
+
+                // Fond (gris)
+                drawList->AddRectFilled(barTop, barBottom, IM_COL32(60, 60, 60, 200));
+                // Barre de vie (vert)
+                drawList->AddRectFilled(filledTop, barBottom, IM_COL32(0, 255, 0, 255));
+                // Contour (noir)
+                drawList->AddRect(barTop, barBottom, IM_COL32(0, 0, 0, 255));
+            }
+        }
     }
 
 	// Bunny Hop
@@ -488,7 +482,7 @@ void cheat::Cheat::RefreshCheat()
         gusPlayer->Bannana_Amount = 5;
     }
 
-	// No Reload
+    // No Reload
     if (features::no_reload) {
         SDK::UWorld* world = SDK::UWorld::GetWorld();
         if (!world) return;
@@ -501,8 +495,20 @@ void cheat::Cheat::RefreshCheat()
 
         auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
 
-        auto callFunction = [](SDK::UObject* obj, const char* name) {
-            SDK::UFunction* fn = SDK::UObject::FindObject<SDK::UFunction>(name);
+        // Optimized callFunction with static cache
+        auto callFunctionCached = [](SDK::UObject* obj, const char* name) {
+            static std::unordered_map<std::string, SDK::UFunction*> cache;
+
+            SDK::UFunction* fn = nullptr;
+            auto it = cache.find(name);
+            if (it != cache.end()) {
+                fn = it->second;
+            }
+            else {
+                fn = SDK::UObject::FindObject<SDK::UFunction>(name);
+                if (fn) cache[name] = fn;
+            }
+
             if (fn && obj)
                 obj->ProcessEvent(fn, nullptr);
             };
@@ -513,28 +519,79 @@ void cheat::Cheat::RefreshCheat()
         gus->Loaded = true;
         gus->CanFire_ = true;
 
-        if (gus->FlintlockFired or gus->IsReloadingFlintlock_) {
+        if (gus->FlintlockFired || gus->IsReloadingFlintlock_) {
             gus->Flintlock_Current_Timer = SDK::FTimerHandle{};
             gus->IsReloadingFlintlock_ = false;
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading Flintlock");
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Flintlock Reload slot 2");
+            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading Flintlock");
+            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Flintlock Reload slot 2");
             gus->FlintlockFired = false;
         }
 
-        if (gus->EorFired or gus->IsReloadingEOR_) {
+        if (gus->EorFired || gus->IsReloadingEOR_) {
             gus->Sniper_Current_Timer = SDK::FTimerHandle{};
             gus->IsReloadingEOR_ = false;
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading EOR");
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish EOR Reload slot 2");
+            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading EOR");
+            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish EOR Reload slot 2");
             gus->EorFired = false;
         }
 
-        if (gus->BlunderBussFired or gus->IsReloadingBlunderbuss_) {
+        if (gus->BlunderBussFired || gus->IsReloadingBlunderbuss_) {
             gus->Blunderbuss_Current_Timer = SDK::FTimerHandle{};
             gus->IsReloadingBlunderbuss_ = false;
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload");
-            callFunction(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload slot 2");
+            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload");
+            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload slot 2");
             gus->BlunderBussFired = false;
+        }
+    }
+
+	//host only
+    if (features::godmode) {
+        SDK::UWorld* world = SDK::UWorld::GetWorld();
+        if (!world) return;
+        SDK::APlayerController* playerController = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
+        if (!playerController) return;
+        SDK::APawn* localPawn = playerController->AcknowledgedPawn;
+        if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
+        auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
+        gus->Current_Health = 100.0;
+		gus->client_health = 100.0;
+	}
+    if (features::enable_fly) {
+        SDK::UWorld* world = SDK::UWorld::GetWorld();
+        if (!world) return;
+        SDK::APlayerController* playerController = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
+        if (!playerController) return;
+        SDK::APawn* localPawn = playerController->AcknowledgedPawn;
+        if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
+        auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
+        SDK::FVector launchVelocity = { 0.f, 0.f, 1000.f };
+        bool overrideXY = true;
+        bool overrideZ = true;
+        gus->LaunchCharacter(launchVelocity, overrideXY, overrideZ); //trouver la mm mais exec server side
+	}
+
+    SDK::ULevel* level = world->PersistentLevel;
+    if (!level) return;
+
+    for (int i = 0; i < level->Actors.Num(); ++i) {
+        SDK::AActor* actor = level->Actors[i];
+        if (!actor) continue;
+
+        // Récupérer le RootComponent
+        SDK::USceneComponent* root = actor->RootComponent;
+        if (!root) continue;
+
+        utils::Console::log("RootComponent: " + root->GetFullName());
+
+        // Récupérer tous les children (USceneComponent)
+        SDK::TArray<SDK::USceneComponent*> children;
+        root->GetChildrenComponents(true, &children);  // ← la bonne syntaxe ici
+
+        for (int j = 0; j < children.Num(); ++j) {
+            SDK::USceneComponent* child = children[j];
+            if (!child) continue;
+
+            utils::Console::log(" - Child SceneComponent: " + child->GetFullName());
         }
     }
 

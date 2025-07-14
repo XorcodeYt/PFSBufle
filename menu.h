@@ -18,6 +18,7 @@ namespace features {
     extern bool bone_esp;
     extern bool box2d_esp;
     extern bool box3d_esp;
+	extern bool health_bar;
 
     //misc
     extern bool bhop;

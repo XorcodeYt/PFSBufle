@@ -45,6 +45,7 @@ void config::Save(const std::string& name) {
         {"bone_esp", features::bone_esp},
         {"box2d_esp", features::box2d_esp},
         {"box3d_esp", features::box3d_esp},
+		{"health_bar", features::health_bar},
 
         // Misc
         {"bhop", features::bhop},
@@ -107,6 +108,7 @@ void config::Load(const std::string& name) {
     features::bone_esp = f.value("bone_esp", false);
     features::box2d_esp = f.value("box2d_esp", false);
     features::box3d_esp = f.value("box3d_esp", false);
+	features::health_bar = f.value("health_bar", false);
 
     features::bhop = f.value("bhop", false);
     features::infinite_supplies = f.value("infinite_supplies", false);

@@ -9,6 +9,7 @@ namespace features {
     bool bone_esp = false;
     bool box2d_esp = false;
     bool box3d_esp = false;
+	bool health_bar = false;
 
     // misc
     bool bhop = false;
@@ -181,6 +182,7 @@ namespace menu {
             ImGui::Checkbox("3D Box ESP", &features::box3d_esp);
             ImGui::SameLine();
             DrawCoolSelectorU32(":##3D", featurescolors::box_color3D);
+			ImGui::Checkbox("Health Bar", &features::health_bar);
 
         }
         else if (strcmp(tabs[current_tab], "View") == 0) {
