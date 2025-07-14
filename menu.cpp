@@ -70,24 +70,37 @@ namespace menu {
             style.ItemSpacing = ImVec2(10, 8);
             style.WindowRounding = 20.0f;
             style.FrameRounding = 10.0f;
+            style.PopupRounding = 8.0f;
             style.IndentSpacing = 15.0f;
             style.ScrollbarSize = 14.0f;
             style.GrabRounding = 7.0f;
 
             ImVec4* colors = style.Colors;
+
             colors[ImGuiCol_Text] = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
             colors[ImGuiCol_WindowBg] = ImVec4(0.07f, 0.08f, 0.09f, 1.00f);
             colors[ImGuiCol_FrameBg] = ImVec4(frameStatic);
-            colors[ImGuiCol_ButtonActive] = ImVec4(0.26f, 0.26f, 0.30f, 1.00f);
+            colors[ImGuiCol_FrameBgHovered] = ImVec4(frameHovered);
+            colors[ImGuiCol_FrameBgActive] = ImVec4(frameActive);
             colors[ImGuiCol_TitleBg] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
             colors[ImGuiCol_TitleBgActive] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
             colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
-            colors[ImGuiCol_FrameBgHovered] = ImVec4(frameHovered);
-            colors[ImGuiCol_FrameBgActive] = ImVec4(frameActive);
-            colors[ImGuiCol_PopupBg] = ImVec4(popupcombo);
-            colors[ImGuiCol_CheckMark] = ImVec4(1.0f, 0.55f, 0.2f, 1.0f);
-            colors[ImGuiCol_Button] = ImVec4(1.0f, 0.55f, 0.2f, 1.0f);
-            colors[ImGuiCol_ButtonHovered] = DarkenColor(ImVec4(1.0f, 0.55f, 0.2f, 1.0f));
+
+            // Buttons (used in Combo too)
+            colors[ImGuiCol_Button] = featurescolors::generalcolor;
+            colors[ImGuiCol_ButtonHovered] = DarkenColor(featurescolors::generalcolor, 0.3f);
+            colors[ImGuiCol_ButtonActive] = DarkenColor(featurescolors::generalcolor, 0.5f);
+
+            // Checkmark
+            colors[ImGuiCol_CheckMark] = featurescolors::generalcolor;
+
+            // Popup background (combo dropdown)
+            colors[ImGuiCol_PopupBg] = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+
+            // Combo dropdown items styling
+            colors[ImGuiCol_Header] = featurescolors::generalcolor;
+            colors[ImGuiCol_HeaderHovered] = DarkenColor(featurescolors::generalcolor, 0.3f);
+            colors[ImGuiCol_HeaderActive] = DarkenColor(featurescolors::generalcolor, 0.5f);
 
             styled = true;
         }
@@ -109,10 +122,21 @@ namespace menu {
         if (memcmp(&lastColor, &featurescolors::generalcolor, sizeof(ImVec4)) != 0)
         {
             ImVec4* colors = ImGui::GetStyle().Colors;
-            colors[ImGuiCol_CheckMark] = featurescolors::generalcolor;
+            // Buttons (used in Combo too)
             colors[ImGuiCol_Button] = featurescolors::generalcolor;
-            colors[ImGuiCol_ButtonHovered] = DarkenColor(featurescolors::generalcolor);
-            colors[ImGuiCol_ButtonActive] = ImVec4(0.26f, 0.26f, 0.30f, 1.00f);
+            colors[ImGuiCol_ButtonHovered] = DarkenColor(featurescolors::generalcolor, 0.3f);
+            colors[ImGuiCol_ButtonActive] = DarkenColor(featurescolors::generalcolor, 0.5f);
+
+            // Checkmark
+            colors[ImGuiCol_CheckMark] = featurescolors::generalcolor;
+
+            // Popup background (combo dropdown)
+            colors[ImGuiCol_PopupBg] = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+
+            // Combo dropdown items styling
+            colors[ImGuiCol_Header] = featurescolors::generalcolor;
+            colors[ImGuiCol_HeaderHovered] = DarkenColor(featurescolors::generalcolor, 0.3f);
+            colors[ImGuiCol_HeaderActive] = DarkenColor(featurescolors::generalcolor, 0.5f);
             lastColor = featurescolors::generalcolor;
         }
         featurescolors::generalcolorU32 = ImGui::ColorConvertFloat4ToU32(featurescolors::generalcolor);

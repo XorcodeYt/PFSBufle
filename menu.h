@@ -144,9 +144,8 @@ namespace featurescolors {
     inline ImU32 Aimbot_dot_color = IM_COL32(255, 255, 255, 255);
     inline ImU32 Bullet_color = IM_COL32(255, 255, 255, 255);
     inline ImU32 generalcolorU32 = ImGui::ColorConvertFloat4ToU32(generalcolor);
-
-
 }
+
 inline float Clamp01(float value) {
     return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
 }
