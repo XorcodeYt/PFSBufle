@@ -54,7 +54,6 @@ namespace features {
 
 inline void DrawCoolSelector(const char* label, ImVec4& color)
 {
-    // Ne pas afficher les ## dans le texte visible
     const char* displayLabel = label;
     const char* hashPos = strstr(label, "##");
     if (hashPos && hashPos != label) {
@@ -68,18 +67,27 @@ inline void DrawCoolSelector(const char* label, ImVec4& color)
     ImGui::SameLine();
 
     ImGui::PushID(label);
-    if (ImGui::ColorButton("##ColorBtn", color, ImGuiColorEditFlags_NoTooltip, ImVec2(20, 20)))
-        ImGui::OpenPopup("ColorPopup");
+    {
+        float lineHeight = ImGui::GetTextLineHeight();
+        float buttonSize = 20.0f;
+        float verticalOffset = (lineHeight - buttonSize) * 0.5f;
 
-    if (ImGui::BeginPopup("ColorPopup")) {
-        ImGui::ColorPicker4("##picker", (float*)&color,
-            ImGuiColorEditFlags_NoInputs |
-            ImGuiColorEditFlags_AlphaBar |
-            ImGuiColorEditFlags_NoSidePreview |
-            ImGuiColorEditFlags_DisplayRGB);
-        ImGui::EndPopup();
+        ImVec2 cursor = ImGui::GetCursorPos();
+        cursor.y += verticalOffset;
+        ImGui::SetCursorPos(cursor);
+
+        if (ImGui::ColorButton("##ColorBtn", color, ImGuiColorEditFlags_NoTooltip, ImVec2(buttonSize, buttonSize)))
+            ImGui::OpenPopup("ColorPopup");
+
+        if (ImGui::BeginPopup("ColorPopup")) {
+            ImGui::ColorPicker4("##picker", (float*)&color,
+                ImGuiColorEditFlags_NoInputs |
+                ImGuiColorEditFlags_AlphaBar |
+                ImGuiColorEditFlags_NoSidePreview |
+                ImGuiColorEditFlags_DisplayRGB);
+            ImGui::EndPopup();
+        }
     }
-
     ImGui::PopID();
 }
 
@@ -87,7 +95,6 @@ inline void DrawCoolSelectorU32(const char* label, ImU32& color)
 {
     ImVec4 tempColor = ImGui::ColorConvertU32ToFloat4(color);
 
-    // Ne pas afficher les ## dans le texte visible
     const char* displayLabel = label;
     const char* hashPos = strstr(label, "##");
     if (hashPos && hashPos != label) {
@@ -101,22 +108,28 @@ inline void DrawCoolSelectorU32(const char* label, ImU32& color)
     ImGui::SameLine();
 
     ImGui::PushID(label);
-    if (ImGui::ColorButton("##ColorBtn", tempColor, ImGuiColorEditFlags_NoTooltip, ImVec2(20, 20)))
-        ImGui::OpenPopup("ColorPopup");
+    {
+        float lineHeight = ImGui::GetTextLineHeight();
+        float buttonSize = 20.0f;
+        float offset = (lineHeight - buttonSize) * 0.5f;
+        ImVec2 pos = ImGui::GetCursorPos();
+        pos.y += offset;
+        ImGui::SetCursorPos(pos);
 
-    bool modified = false;
-    if (ImGui::BeginPopup("ColorPopup")) {
-        modified = ImGui::ColorPicker4("##picker", (float*)&tempColor,
-            ImGuiColorEditFlags_NoInputs |
-            ImGuiColorEditFlags_AlphaBar |
-            ImGuiColorEditFlags_NoSidePreview |
-            ImGuiColorEditFlags_DisplayRGB);
-        ImGui::EndPopup();
+        if (ImGui::ColorButton("##ColorBtn", tempColor, ImGuiColorEditFlags_NoTooltip, ImVec2(buttonSize, buttonSize)))
+            ImGui::OpenPopup("ColorPopup");
+
+        if (ImGui::BeginPopup("ColorPopup")) {
+            if (ImGui::ColorPicker4("##picker", (float*)&tempColor,
+                ImGuiColorEditFlags_NoInputs |
+                ImGuiColorEditFlags_AlphaBar |
+                ImGuiColorEditFlags_NoSidePreview |
+                ImGuiColorEditFlags_DisplayRGB)) {
+                color = ImGui::ColorConvertFloat4ToU32(tempColor);
+            }
+            ImGui::EndPopup();
+        }
     }
-
-    if (modified)
-        color = ImGui::ColorConvertFloat4ToU32(tempColor);
-
     ImGui::PopID();
 }
 
@@ -146,13 +159,10 @@ inline bool CustomRoundedSlider(const char* label, float* value, float min, floa
     float t = (*value - min) / (max - min);
     t = Clamp01(t);
 
-    // Fond de la barre
     draw->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(40, 40, 40, 180), radius);
 
-    // Partie remplie
     draw->AddRectFilled(pos, ImVec2(pos.x + size.x * t, pos.y + size.y), fill_color, radius);
 
-    // Interaction souris
     ImGui::InvisibleButton(label, size);
     bool changed = false;
     if (ImGui::IsItemActive()) {
@@ -162,7 +172,6 @@ inline bool CustomRoundedSlider(const char* label, float* value, float min, floa
         changed = true;
     }
 
-    // Affichage valeur à droite
     ImVec2 text_pos = ImVec2(pos.x + size.x + 8, pos.y - 2);
     char buf[16];
     snprintf(buf, sizeof(buf), "%.0f", *value);

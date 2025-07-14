@@ -88,5 +88,4 @@ namespace utils
 				FreeLibraryAndExitThread(gModule, 0);
 		}
 	};
-
 }

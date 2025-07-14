@@ -85,6 +85,9 @@ namespace menu {
             colors[ImGuiCol_FrameBgHovered] = ImVec4(frameHovered);
             colors[ImGuiCol_FrameBgActive] = ImVec4(frameActive);
             colors[ImGuiCol_PopupBg] = ImVec4(popupcombo);
+            colors[ImGuiCol_CheckMark] = ImVec4(1.0f, 0.55f, 0.2f, 1.0f);
+            colors[ImGuiCol_Button] = ImVec4(1.0f, 0.55f, 0.2f, 1.0f);
+            colors[ImGuiCol_ButtonHovered] = DarkenColor(ImVec4(1.0f, 0.55f, 0.2f, 1.0f));
 
             styled = true;
         }
@@ -158,6 +161,7 @@ namespace menu {
         else if (strcmp(tabs[current_tab], "View") == 0) {
             ImGui::Checkbox("Enable FOV", &features::fov_enabled);
             ImGui::SameLine();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 11);
             CustomRoundedSlider("##FOVSlider", &features::fov, 60.0f, 179.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
             ImGui::Separator();
             ImGui::Checkbox("Enable Crosshair", &features::crosshair_enabled);
@@ -167,9 +171,11 @@ namespace menu {
             ImGui::Combo("Crosshair Type", &features::crosshair_type, "Dot\0Cross\0");
             ImGui::Text("Crosshair Size");
             ImGui::SameLine();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6);
             CustomRoundedSlider("##crossize", &features::crosshair_size, 2.0f, 20.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
             ImGui::Text("Crosshair Thickness");
             ImGui::SameLine();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6);
             CustomRoundedSlider("##crossthick", &features::crosshair_thickness, 0.5f, 5.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
 
         }
@@ -181,12 +187,16 @@ namespace menu {
             DrawCoolSelectorU32(":##SPL", featurescolors::Aimbot_dot_color);
 			ImGui::Text("Selected Player Size");
 			ImGui::SameLine();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6);
 			CustomRoundedSlider("##SPSlider", &features::selected_player_size, 0.0f, 20.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
             ImGui::Checkbox("Use Aimbot FOV Limit", &features::aimbot_fov_enabled);
             ImGui::SameLine();
             DrawCoolSelectorU32(":##FOV", featurescolors::Aimbot_FOV_color);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 2);
             CustomRoundedSlider("##FOVaimbot", &features::aimbot_fov, 0.0f, 1000.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
             const char* aimModes[] = { "Closest to Crosshair", "Closest by Distance" };
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6);
             ImGui::Combo("Aimbot Type", &features::aimbot_type, aimModes, IM_ARRAYSIZE(aimModes));
             ImGui::Separator();
             ImGui::Checkbox("Infinite Ammo + Supplies", &features::infinite_ammo);
@@ -213,7 +223,6 @@ namespace menu {
 
         ImGui::EndChild();
         ImGui::End();
-        ImGui::PopStyleVar();
     }
 
 }

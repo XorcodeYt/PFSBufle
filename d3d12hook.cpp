@@ -33,18 +33,6 @@ namespace d3d12hook {
     }
 
     long __fastcall hookPresentD3D12(IDXGISwapChain3* pSwapChain, UINT SyncInterval, UINT Flags) {
-        if (GetAsyncKeyState(globals::openMenuKey) & 1) {
-            menu::isOpen = !menu::isOpen;
-
-            /*static bool lastMenuState = false;
-            if (menu::isOpen != lastMenuState) {
-                ImGuiIO& io = ImGui::GetIO();
-                io.MouseDrawCursor = false;
-
-                ::ShowCursor(menu::isOpen);
-                lastMenuState = menu::isOpen;
-            }*/
-        }
 
         if (!gInitialized) {
             DebugLog("[d3d12hook] Initializing ImGui on first Present.\n");
@@ -91,6 +79,10 @@ namespace d3d12hook {
 
             // ImGui
             ImGui::CreateContext();
+
+            while (ShowCursor(FALSE) >= 0);
+            while (ShowCursor(TRUE) < 0);
+
             ImGuiIO& io = ImGui::GetIO();
             ImFontConfig fontConfig;
             fontConfig.FontDataOwnedByAtlas = false;
@@ -118,18 +110,47 @@ namespace d3d12hook {
         {
             ImGui_ImplDX12_NewFrame();
             ImGui_ImplWin32_NewFrame();
-
             ImGui::NewFrame();
 
+            static bool lastKeyState = false;
+            bool currentKeyState = (GetAsyncKeyState(globals::openMenuKey) & 0x8000);
+
+            if (currentKeyState && !lastKeyState) {
+                menu::isOpen = !menu::isOpen;
+            }
+            lastKeyState = currentKeyState;
+
+            static bool lastOpen = false;
             ImGuiIO& io = ImGui::GetIO();
+
             io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-            io.MouseDrawCursor = false;
+            io.MouseDrawCursor = menu::isOpen;
+
+            if (menu::isOpen != lastOpen)
+            {
+                if (menu::isOpen)
+                {
+                    ReleaseCapture();
+                    SetFocus(desc.OutputWindow);
+                }
+                else
+                {
+                    SetCapture(desc.OutputWindow);
+                }
+
+                lastOpen = menu::isOpen;
+            }
+            if (menu::isOpen)
+            {
+                if (GetCapture() != nullptr && GetCapture() != desc.OutputWindow)
+                    ReleaseCapture();
+            }
 
             menu::Init();
+
             cheat::Cheat::RefreshCheat();
 
             ImGui::Render();
-            ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), gCommandList);
 
             UINT frameIdx = pSwapChain->GetCurrentBackBufferIndex();
             FrameContext& ctx = gFrameContexts[frameIdx];
@@ -157,14 +178,14 @@ namespace d3d12hook {
             ID3D12DescriptorHeap* heaps[] = { gHeapSRV };
             gCommandList->SetDescriptorHeaps(1, heaps);
 
-            ImGui::Render();
-            ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), gCommandList);
+            if (ImGui::GetDrawData())
+                ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), gCommandList);
 
             barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
             barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
             gCommandList->ResourceBarrier(1, &barrier);
-            gCommandList->Close();
 
+            gCommandList->Close();
             gCommandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList* const*>(&gCommandList));
         }
 
