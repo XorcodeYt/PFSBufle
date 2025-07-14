@@ -2,9 +2,7 @@
 #include "menu.h"
 #include <algorithm>
 //menu.cpp
-inline float Clamp01(float value) {
-    return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
-}
+static ImVec4 lastColor = featurescolors::generalcolor;
 namespace features {
     // player features
     bool bone_esp = false;
@@ -24,7 +22,7 @@ namespace features {
     int crosshair_type = 0;
     float crosshair_size = 6.0f;
     float crosshair_thickness = 1.5f;
-    ImVec4 crosshair_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+
 
     // weapon
     bool aimbot_enabled = false;
@@ -32,46 +30,62 @@ namespace features {
     float aimbot_fov = 90.0f;
     int aimbot_type = 0; // 0: Closest to Crosshair, 1: Closest by Distance
     bool infinite_ammo = false;
-	bool no_reload = false;
-	bool demon_shoot = false; //marche po
+    bool no_reload = false;
+    bool demon_shoot = false; //marche po
     bool enable_magicbullet = false;
-	bool magicbullet_fov_enabled = false;
+    bool magicbullet_fov_enabled = false;
     float magicbullet_fov = 90.0f;
-	int magicbullet_type = 0; // 0: Closest to Crosshair, 1: Closest by Distance
+    int magicbullet_type = 0; // 0: Closest to Crosshair, 1: Closest by Distance
 
     // server
     bool spoof_name_enabled = false;
     char spoofed_name[64] = "HaikiuWasHere";
 }
-
-
+void menu::ResetAnimation() {
+    anim_progress = 0.0f;
+    animating = true;
+}
+ImVec4 DarkenColor(const ImVec4& color, float factor = 0.2f)
+{
+    return ImVec4(
+        color.x * (1.0f - factor),
+        color.y * (1.0f - factor),
+        color.z * (1.0f - factor),
+        color.w
+    );
+}
 namespace menu {
     bool isOpen = true;
-    static bool noTitleBar = false;
+    bool noTitleBar = false;
+    float anim_progress = 1.0f;
+    float anim_speed = 2.0f;
+    bool animating = false;
+    bool wasOpen = true;
 
     void Init() {
-        if (!isOpen) return;
 
-        static float anim_progress = 0.0f;
-        static float anim_speed = 2.0f;
-        static bool animating = true;
-        static bool last_isOpen = false;
-
-        if (isOpen && !last_isOpen) {
-            anim_progress = 0.0f;
-            animating = true;
+        if (wasOpen != isOpen) {
+            ResetAnimation();
+            wasOpen = isOpen;
         }
-        last_isOpen = isOpen;
+
+        if (!isOpen) return;
 
         if (animating) {
             anim_progress += ImGui::GetIO().DeltaTime * anim_speed;
+
             if (anim_progress >= 1.0f) {
                 anim_progress = 1.0f;
                 animating = false;
+
+                if (!isOpen) return; // Stop drawing when closed
             }
         }
-
-        float alpha = anim_progress;
+        else {
+            if (!isOpen) return; // No draw if not animating and closed
+        }
+        float textWidth = ImGui::CalcTextSize("PirateFS Menu").x;
+        float alpha = isOpen ? Clamp01(anim_progress) : Clamp01(1.0f - anim_progress);
         float slide_offset = (1.0f - anim_progress) * 100.0f;
         static int current_tab = 0;
         static bool styled = false;
@@ -90,22 +104,23 @@ namespace menu {
             ImVec4* colors = style.Colors;
             colors[ImGuiCol_Text] = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
             colors[ImGuiCol_WindowBg] = ImVec4(0.07f, 0.08f, 0.09f, 1.00f);
-            colors[ImGuiCol_FrameBg] = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
-            colors[ImGuiCol_FrameBgHovered] = ImVec4(0.18f, 0.20f, 0.22f, 1.00f);
-            colors[ImGuiCol_FrameBgActive] = ImVec4(0.22f, 0.24f, 0.26f, 1.00f);
-            colors[ImGuiCol_CheckMark] = ImVec4(0.98f, 0.38f, 0.14f, 1.00f);
-            colors[ImGuiCol_Button] = ImVec4(0.18f, 0.18f, 0.20f, 1.00f);
-            colors[ImGuiCol_ButtonHovered] = ImVec4(0.24f, 0.24f, 0.27f, 1.00f);
+            colors[ImGuiCol_FrameBg] = ImVec4(frameStatic);
             colors[ImGuiCol_ButtonActive] = ImVec4(0.26f, 0.26f, 0.30f, 1.00f);
             colors[ImGuiCol_TitleBg] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
             colors[ImGuiCol_TitleBgActive] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
             colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
+            colors[ImGuiCol_FrameBgHovered] = ImVec4(frameHovered);
+            colors[ImGuiCol_FrameBgActive] = ImVec4(frameActive);
+            colors[ImGuiCol_PopupBg] = ImVec4(popupcombo);
+
             styled = true;
+
         }
 
-        ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
+
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
         ImVec2 basePos = ImVec2(25, 25);
-        ImVec2 animPos = ImVec2(basePos.x + slide_offset, basePos.y);
+        ImVec2 animPos = ImVec2(basePos.x - slide_offset, basePos.y);
 
         if (anim_progress < 1.0f)
             ImGui::SetNextWindowPos(animPos, ImGuiCond_Always);
@@ -116,15 +131,31 @@ namespace menu {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 
         const char* tabs[] = {
-            "Players", "View", "Weapon", 
+            "Players", "View", "Weapon",
             "Server", "Misc", "Settings" };
 
-        ImGui::Begin("PirateFS Menu", &isOpen, flags);
+
+
+        ImGui::Begin("NiggerWare", &isOpen, flags);
+        float windowWidth = ImGui::GetWindowSize().x;
+        ImGui::SetCursorPosX((windowWidth - textWidth) * 0.5f);
+        ImGui::Text("NiggerWare");
+        //trucs de couleurs
+        if (memcmp(&lastColor, &featurescolors::generalcolor, sizeof(ImVec4)) != 0)
+        {
+            ImVec4* colors = ImGui::GetStyle().Colors;
+            colors[ImGuiCol_CheckMark] = featurescolors::generalcolor;
+            colors[ImGuiCol_Button] = featurescolors::generalcolor;
+            colors[ImGuiCol_ButtonHovered] = DarkenColor(featurescolors::generalcolor);
+            colors[ImGuiCol_ButtonActive] = ImVec4(0.26f, 0.26f, 0.30f, 1.00f);
+            lastColor = featurescolors::generalcolor;
+        }
+        featurescolors::generalcolorU32 = ImGui::ColorConvertFloat4ToU32(featurescolors::generalcolor);
         ImGui::BeginChild("##Sidebar", ImVec2(150, 0), true);
 
         for (int i = 0; i < IM_ARRAYSIZE(tabs); ++i) {
             bool selected = (current_tab == i);
-            ImVec4 bgColor = selected ? ImVec4(0.95f, 0.38f, 0.14f, 1.0f) : ImVec4(0.13f, 0.14f, 0.16f, 1.0f);
+            ImVec4 bgColor = selected ? featurescolors::generalcolor : ImVec4(0.13f, 0.14f, 0.16f, 1.0f);
             ImVec4 textColor = selected ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.85f, 0.88f, 0.91f, 1.0f);
             ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, bgColor);
@@ -152,67 +183,76 @@ namespace menu {
 
         if (strcmp(tabs[current_tab], "Players") == 0) {
             ImGui::Checkbox("Bone ESP", &features::bone_esp);
-            ImGui::Checkbox("2D Box ESP", &features::box2d_esp);
+            ImGui::SameLine();
+            DrawCoolSelectorU32(":##bone", featurescolors::Bones_color);// là les trucs comme ça c'est les sliders de couleur d'esp uwu
+
+            ImGui::Checkbox("2D Box ESP  ", &features::box2d_esp);
+            ImGui::SameLine();
+            DrawCoolSelectorU32(":##2D", featurescolors::box_color2D);
+
             ImGui::Checkbox("3D Box ESP", &features::box3d_esp);
+            ImGui::SameLine();
+            DrawCoolSelectorU32(":##3D", featurescolors::box_color3D);
+
         }
         else if (strcmp(tabs[current_tab], "View") == 0) {
             ImGui::Checkbox("Enable FOV", &features::fov_enabled);
-            ImGui::SliderFloat("FOV", &features::fov, 60.0f, 179.0f);
+            ImGui::SameLine();
+            CustomRoundedSlider("##FOVSlider", &features::fov, 60.0f, 179.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
             ImGui::Separator();
             ImGui::Checkbox("Enable Crosshair", &features::crosshair_enabled);
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 298);
+            DrawCoolSelector("Crosshair color", featurescolors::crosshair_color);
             ImGui::Combo("Crosshair Type", &features::crosshair_type, "Dot\0Cross\0");
-            ImGui::SliderFloat("Size", &features::crosshair_size, 2.0f, 20.0f);
-            ImGui::SliderFloat("Thickness", &features::crosshair_thickness, 0.5f, 5.0f);
-            ImGui::ColorEdit4("Color", (float*)&features::crosshair_color);
+            ImGui::Text("Crosshair Size");
+            ImGui::SameLine();
+            CustomRoundedSlider("##crossize", &features::crosshair_size, 2.0f, 20.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
+            ImGui::Text("Crosshair Thickness");
+            ImGui::SameLine();
+            CustomRoundedSlider("##crossthick", &features::crosshair_thickness, 0.5f, 5.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
+
         }
         else if (strcmp(tabs[current_tab], "Weapon") == 0) {
             ImGui::Checkbox("Enable Aimbot", &features::aimbot_enabled);
             ImGui::Checkbox("Use Aimbot FOV Limit", &features::aimbot_fov_enabled);
-            ImGui::SliderFloat("Aimbot FOV", &features::aimbot_fov, 10.0f, 1000.0f);
+            ImGui::SameLine();
+            DrawCoolSelectorU32(":##FOV", featurescolors::Aimbot_FOV_color);
+            CustomRoundedSlider("##FOVaimbot", &features::aimbot_fov, 0.0f, 1000.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
             const char* aimModes[] = { "Closest to Crosshair", "Closest by Distance" };
             ImGui::Combo("Aimbot Type", &features::aimbot_type, aimModes, IM_ARRAYSIZE(aimModes));
             ImGui::Separator();
-            ImGui::Checkbox("Infinite Ammo", &features::infinite_ammo);
-			ImGui::Checkbox("No Reload", &features::no_reload);
-			ImGui::Checkbox("Enable Demon Shoot", &features::demon_shoot);  
+            ImGui::Checkbox("Infinite Ammo + Supplies", &features::infinite_ammo);
+            ImGui::Checkbox("No Reload", &features::no_reload);
+            ImGui::Checkbox("Enable Demon Shoot", &features::demon_shoot);
+            ImGui::Separator();
             ImGui::Checkbox("Enable Magic Bullet", &features::enable_magicbullet);
-			ImGui::Separator();
             const char* bulletsModes[] = { "Closest to Crosshair", "Closest by Distance" };
             ImGui::Checkbox("Use Magic Bullet FOV Limit", &features::magicbullet_fov_enabled);
-            ImGui::SliderFloat("Magic Bullet FOV", &features::magicbullet_fov, 10.0f, 1000.0f);
+            ImGui::SameLine();
+            DrawCoolSelectorU32(":##FOV", featurescolors::Aimbot_FOV_color);
+            CustomRoundedSlider("##MBaimbot", &features::magicbullet_fov, 0.0f, 1000.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
             const char* MbModes[] = { "Closest to Crosshair", "Closest by Distance" };
             ImGui::Combo("Magic Bullet Type", &features::magicbullet_type, MbModes, IM_ARRAYSIZE(bulletsModes));
-
         }
         else if (strcmp(tabs[current_tab], "Misc") == 0) {
             ImGui::Checkbox("Bunny Hop", &features::bhop);
-			ImGui::Checkbox("Infinite Supplies", &features::infinite_supplies);
+            ImGui::Checkbox("Infinite Supplies", &features::infinite_supplies);
             ImGui::Separator();
-			ImGui::Checkbox("Enable Fly", &features::enable_fly);
+            ImGui::Checkbox("Enable Fly", &features::enable_fly);
             ImGui::Checkbox("Gode Mode", &features::godmode);
         }
         else if (strcmp(tabs[current_tab], "Server") == 0) {
-			bool prestaEnabled = false;
+            bool prestaEnabled = false;
             ImGui::Checkbox("Enable Presta d'Haikiu", &prestaEnabled);
             ImGui::Separator();
             ImGui::InputText("Spoofed Name", features::spoofed_name, sizeof(features::spoofed_name));
             ImGui::Checkbox("Enable Name Spoofing", &features::spoof_name_enabled);
         }
-        else {
-            ImGui::Columns(3, nullptr, false);
-            for (int col = 0; col < 3; ++col) {
-                ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                    (std::string(tabs[current_tab]) + " Section " + char('A' + col)).c_str());
-                for (int i = 0; i < 3; ++i) {
-                    static bool dummy_toggle[12][3][3] = {};
-                    std::string label = "Feature " + std::to_string(i + 1);
-                    std::string id = label + "##" + std::to_string(current_tab) + "_" + std::to_string(col) + "_" + std::to_string(i);
-                    ImGui::Checkbox(id.c_str(), &dummy_toggle[current_tab][col][i]);
-                }
-                ImGui::NextColumn();
-            }
-            ImGui::Columns(1);
+        else if (strcmp(tabs[current_tab], "Settings") == 0) {
+            DrawCoolSelector("General color", featurescolors::generalcolor);
         }
+
         ImGui::EndChild();
         ImGui::End();
         ImGui::PopStyleVar();

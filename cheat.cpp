@@ -26,22 +26,33 @@ SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* 
 
         std::string name = character->GetName();
         if (name.find("TrainGusPlayer") == std::string::npos) continue;
+        if (name.find("Default") != std::string::npos) continue;
+
+        auto* trainPlayer = reinterpret_cast<SDK::ATrainGusPlayer_C*>(character);
+        if (!trainPlayer) continue;
+
+        if (trainPlayer->IsDead_) continue;
 
         auto* mesh = character->Mesh;
         if (!mesh || mesh->GetNumBones() <= 2) continue;
 
         SDK::FVector boneWorld = mesh->GetSocketLocation(mesh->GetBoneName(2));
-
         SDK::FVector2D screenPos;
-        if (!pc->ProjectWorldLocationToScreen(boneWorld, &screenPos, false)) continue;
 
-        float distToCrosshair = helper::Vec2Distance(screenPos, screenCenter);
-
-        if (fov_enabled && fov > 0.f && distToCrosshair > fov)
-            continue;
-
-        if (type == 0) // crosshair
+        if (fov_enabled)
         {
+            if (!pc->ProjectWorldLocationToScreen(boneWorld, &screenPos, false)) continue;
+
+            float distToCrosshair = helper::Vec2Distance(screenPos, screenCenter);
+            if (distToCrosshair > fov) continue;
+        }
+
+        if (type == 0) // closest to crosshair
+        {
+            // fallback screen projection for output even if FOV is off
+            if (!pc->ProjectWorldLocationToScreen(boneWorld, &screenPos, false)) continue;
+
+            float distToCrosshair = helper::Vec2Distance(screenPos, screenCenter);
             if (distToCrosshair < bestMetric)
             {
                 bestMetric = distToCrosshair;
@@ -49,14 +60,16 @@ SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* 
                 outScreenPos = screenPos;
             }
         }
-        else if (type == 1) // 3D distance
+        else if (type == 1) // closest by 3D distance
         {
             float distToPlayer = helper::Vec3Size(boneWorld - localPos);
             if (distToPlayer < bestMetric)
             {
                 bestMetric = distToPlayer;
                 bestTarget = character;
-                outScreenPos = screenPos;
+
+                // try to set outScreenPos for visual targeting if possible
+                pc->ProjectWorldLocationToScreen(boneWorld, &outScreenPos, false);
             }
         }
     }
@@ -136,6 +149,8 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
             SDK::FHitResult dummyHit;
             proj->K2_SetActorLocation(headPos, false, &dummyHit, true);
 		}
+
+
     }
     // Continue normal ProcessEvent
     oProcessEvent(obj, function, params);
@@ -195,7 +210,7 @@ void cheat::Cheat::RefreshCheat()
 
     // Draw ESP for characters
     int boneLinks[][2] = {
-        {6,5},{5,4},{4,3},{3,2},{2,1},{1,0},
+        {6,5},{5,4},{4,3},{3,2},{2,1},
         {11,10},{10,9},{9,8},{8,3},
         {14,13},{13,8},{14,15},{17,18},
         {18,19},{19,20},{17,22},{22,23},{23,24},{24,25}
@@ -210,6 +225,7 @@ void cheat::Cheat::RefreshCheat()
 
         std::string charName = character->GetName();
         if (charName.find("TrainGusPlayer") == std::string::npos) continue;
+        if (charName.find("Default") != std::string::npos) continue;
 
         SDK::USkeletalMeshComponent* mesh = character->Mesh;
         if (!mesh) continue;
@@ -228,7 +244,7 @@ void cheat::Cheat::RefreshCheat()
 
                 if (playerController->ProjectWorldLocationToScreen(p1, &s1, false) &&
                     playerController->ProjectWorldLocationToScreen(p2, &s2, false)) {
-                    drawList->AddLine(ImVec2(s1.X, s1.Y), ImVec2(s2.X, s2.Y), IM_COL32(255, 255, 255, 255), 1.5f);
+                    drawList->AddLine(ImVec2(s1.X, s1.Y), ImVec2(s2.X, s2.Y), featurescolors::Bones_color, 1.5f);
                 }
             }
         }
@@ -263,7 +279,7 @@ void cheat::Cheat::RefreshCheat()
                 maxY += height * 0.15f;
 
                 drawList->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY),
-                    IM_COL32(255, 255, 0, 255), 0.0f, 0, 1.5f);
+                    featurescolors::box_color2D, 0.0f, 0, 1.5f);
             }
         }
         // show 3D box
@@ -319,7 +335,7 @@ void cheat::Cheat::RefreshCheat()
             for (int e = 0; e < 12; ++e) {
                 ImVec2 p1(screen[edges[e][0]].X, screen[edges[e][0]].Y);
                 ImVec2 p2(screen[edges[e][1]].X, screen[edges[e][1]].Y);
-                drawList->AddLine(p1, p2, IM_COL32(0, 255, 255, 255), 1.5f);
+                drawList->AddLine(p1, p2, featurescolors::box_color3D, 1.5f);
             }
         }
     }
@@ -342,7 +358,7 @@ void cheat::Cheat::RefreshCheat()
     // Crosshair
     if (features::crosshair_enabled) {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-        ImU32 color = ImGui::ColorConvertFloat4ToU32(features::crosshair_color);
+        ImU32 color = ImGui::ColorConvertFloat4ToU32(featurescolors::crosshair_color);
 
         if (features::crosshair_type == 0) {
             drawList->AddCircleFilled(screenCenter, features::crosshair_size, color);
@@ -366,7 +382,7 @@ void cheat::Cheat::RefreshCheat()
         if (bestTarget)
         {
 			utils::Console::log("[AIMBOT] Target found: " + bestTarget->GetName());
-            drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), 5.0f, IM_COL32(255, 0, 0, 255));
+            drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), 5.0f, featurescolors::Aimbot_dot_color);
 
             if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000))
             {
@@ -393,7 +409,7 @@ void cheat::Cheat::RefreshCheat()
     if (features::aimbot_fov_enabled && features::aimbot_fov > 0.f or features::magicbullet_fov_enabled && features::magicbullet_fov > 0.0f)
     {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-        drawList->AddCircle(screenCenter, features::aimbot_fov, IM_COL32(255, 255, 0, 180), 64, 1.5f);
+        drawList->AddCircle(screenCenter, features::aimbot_fov, featurescolors::Aimbot_FOV_color, 64, 1.5f);
     }
 
     static std::string lastSpoofedName = "";
