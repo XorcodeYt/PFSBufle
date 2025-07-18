@@ -148,8 +148,6 @@ namespace d3d12hook {
 
             menu::Init();
 
-            cheat::Cheat::RefreshCheat();
-
             ImGui::Render();
 
             UINT frameIdx = pSwapChain->GetCurrentBackBufferIndex();

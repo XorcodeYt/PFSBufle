@@ -3,14 +3,28 @@
 #include <windows.h>
 #include "stdafx.h"
 #include <unordered_set>
+#include <queue>
+#include <functional>  
 
 // Forward declaration
-void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void* params);
-
 typedef void(__fastcall* tProcessEvent)(SDK::UObject*, SDK::UFunction*, void*);
 tProcessEvent oProcessEvent = nullptr;
 
-std::unordered_set<std::string> loggedFunctions;
+typedef void(__fastcall* tPostRender)(SDK::UGameViewportClient*, SDK::UCanvas*);
+tPostRender oPostRender = nullptr;
+
+
+// get few values
+inline int GetCurrentWeapon(SDK::ATrainGusPlayer_C* gus)
+{
+    if (!gus) return 0;
+
+    if (gus->Blunderbuss_Equipped_Right_now) return 1;
+    if (gus->FlintlockEquppiedRightnow)        return 2;
+    if (gus->Eye_of_Reach_Equipped_rightnow)   return 3;
+
+    return 0;
+}
 
 SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* localPawn, SDK::FVector2D screenCenter, SDK::FVector2D& outScreenPos, int type, bool fov_enabled, float fov)
 {
@@ -80,49 +94,82 @@ SDK::ACharacter* GetBestTargetCharacter(SDK::APlayerController* pc, SDK::APawn* 
     return bestTarget;
 }
 
-void HookProcessEvent()
+SDK::ATrainGusPlayer_C* GetClosestPlayer(SDK::APawn* localPawn)
 {
-    void** vtable = *(void***)(SDK::UObject::GObjects->GetByIndex(0));
-    if (!vtable) {
-        utils::Console::logError("[HOOK] Failed to get UObject vtable");
-        return;
+    if (!localPawn) return nullptr;
+
+    SDK::FVector localPos = localPawn->K2_GetActorLocation();
+    SDK::ATrainGusPlayer_C* closest = nullptr;
+    float minDistance = FLT_MAX;
+
+    for (int i = 0; i < SDK::UObject::GObjects->Num(); ++i)
+    {
+        SDK::UObject* obj = SDK::UObject::GObjects->GetByIndex(i);
+        if (!obj || !obj->IsA(SDK::ATrainGusPlayer_C::StaticClass())) continue;
+
+        auto* player = static_cast<SDK::ATrainGusPlayer_C*>(obj);
+        if (!player || player == localPawn) continue;
+
+        std::string name = player->GetName();
+        if (name.find("TrainGusPlayer") == std::string::npos) continue;
+        if (name.find("Default") != std::string::npos) continue;
+
+        auto* trainPlayer = reinterpret_cast<SDK::ATrainGusPlayer_C*>(player);
+
+        if (!trainPlayer) continue;
+
+        if (trainPlayer->IsDead_ || trainPlayer->Current_Health < 1) continue;
+
+        if (player->IsDead_ || player->Current_Health < 1) continue;
+
+        SDK::FVector targetPos = player->K2_GetActorLocation();
+        float distance = helper::Vec3Size(targetPos - localPos);
+
+        if (distance < minDistance)
+        {
+            minDistance = distance;
+            closest = player;
+        }
     }
 
-    void* target = vtable[75]; // ProcessEvent idx de offsets
-    utils::Console::log("[HOOK] VTable[75] = " + std::to_string((uintptr_t)target));
+    return closest;
+}
 
-    if (MH_CreateHook(target, &hkProcessEvent, reinterpret_cast<void**>(&oProcessEvent)) == MH_OK) {
-        MH_EnableHook(target);
-        utils::Console::log("[HOOK] ProcessEvent hooked successfully");
-    }
-    else {
-        utils::Console::logError("[HOOK] Failed to hook ProcessEvent");
+void DrawFilledCircle(SDK::UCanvas* canvas, const SDK::FVector2D& center, float radius, int segments, const SDK::FLinearColor& color)
+{
+    SDK::FVector2D prevPoint = SDK::FVector2D(center.X + radius, center.Y);
+    for (int i = 1; i <= segments; ++i)
+    {
+        float angle = 2.0f * 3.14159265f * i / segments;
+        SDK::FVector2D newPoint = SDK::FVector2D(
+            center.X + cosf(angle) * radius,
+            center.Y + sinf(angle) * radius
+        );
+
+        // Draw triangle fan lines (simulate fill)
+        canvas->K2_DrawLine(center, prevPoint, 1.0f, color);
+        canvas->K2_DrawLine(prevPoint, newPoint, 1.0f, color);
+        canvas->K2_DrawLine(newPoint, center, 1.0f, color);
+
+        prevPoint = newPoint;
     }
 }
 
+// hooks
 void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void* params)
 {
     if (!function || !oProcessEvent) return;
 
+    static std::unordered_set<std::string> alreadyLogged;
     const std::string fname = function->GetFullName();
 
-    if (fname.find("InpActEvt_Fire") != std::string::npos)
-    {
-        struct {
-            SDK::FKey Key_0;
-        }*keyStruct = reinterpret_cast<decltype(keyStruct)>(params);
-
-        int keyIndex = keyStruct->Key_0.KeyName.ComparisonIndex;
-        utils::Console::log("Fire Key Index = " + std::to_string(keyIndex));
-    }
-
-    // Magic bullet sur les projectiles
     if (
         fname.find("ReceiveBeginPlay") != std::string::npos &&
         (
             fname.find("Flintlock_Projectile") != std::string::npos ||
             fname.find("FlintlockProjectile") != std::string::npos ||
             fname.find("BlunderProjectile") != std::string::npos ||
+            fname.find("Blunderbomb") != std::string::npos ||
             fname.find("EyeOfReach_Projectile") != std::string::npos
             )
         )
@@ -146,7 +193,7 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
             SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
             SDK::FVector2D targetScreen;
 
-            SDK::ACharacter* bestTarget = GetBestTargetCharacter(pc, localPawn, screenCenterVec, targetScreen, features::aimbot_type, features::aimbot_fov_enabled, features::aimbot_fov);
+            SDK::ACharacter* bestTarget = GetClosestPlayer(localPawn);
             if (!bestTarget) return;
 
             SDK::FVector targetPos = bestTarget->K2_GetActorLocation();
@@ -164,6 +211,75 @@ void __fastcall hkProcessEvent(SDK::UObject* obj, SDK::UFunction* function, void
     oProcessEvent(obj, function, params);
 }
 
+void HookProcessEvent()
+{
+    void** vtable = *(void***)(SDK::UObject::GObjects->GetByIndex(0));
+    if (!vtable) {
+        utils::Console::logError("[HOOK] Failed to get UObject vtable");
+        return;
+    }
+
+    void* target = vtable[75];
+    utils::Console::log("[HOOK] VTable[75] = " + std::to_string((uintptr_t)target));
+
+    if (MH_CreateHook(target, &hkProcessEvent, reinterpret_cast<void**>(&oProcessEvent)) == MH_OK) {
+        MH_EnableHook(target);
+        utils::Console::log("[HOOK] ProcessEvent hooked successfully");
+    }
+    else {
+        utils::Console::logError("[HOOK] Failed to hook ProcessEvent");
+    }
+}
+
+void __fastcall hkPostRender(SDK::UGameViewportClient* viewport, SDK::UCanvas* canvas)
+{
+    cheat::Cheat::RefreshCheat(canvas);
+
+    if (oPostRender)
+        oPostRender(viewport, canvas);
+}
+
+void HookPostRender()
+{
+    SDK::UWorld* world = SDK::UWorld::GetWorld();
+    if (!world || !world->OwningGameInstance) {
+        utils::Console::logError("[HOOK] Failed: No world or game instance");
+        return;
+    }
+
+    const auto& localPlayers = world->OwningGameInstance->LocalPlayers;
+    if (localPlayers.Num() == 0 || !localPlayers[0]) {
+        utils::Console::logError("[HOOK] Failed: No local players");
+        return;
+    }
+
+    SDK::ULocalPlayer* localPlayer = localPlayers[0];
+    SDK::UGameViewportClient* viewport = localPlayer->ViewportClient;
+
+    if (!viewport) {
+        utils::Console::logError("[HOOK] Failed: Viewport is null");
+        return;
+    }
+
+    void** vtable = *(void***)(viewport);
+    if (!vtable) {
+        utils::Console::logError("[HOOK] Failed: Viewport vtable is null");
+        return;
+    }
+
+    void* target = vtable[0x6C];
+    utils::Console::log("[HOOK] Hooking PostRender @ vtable[0x5E]");
+
+    if (MH_CreateHook(target, &hkPostRender, reinterpret_cast<void**>(&oPostRender)) == MH_OK) {
+        MH_EnableHook(target);
+        utils::Console::log("[HOOK] PostRender hooked successfully");
+    }
+    else {
+        utils::Console::logError("[HOOK] Failed to hook PostRender");
+    }
+}
+
+// cheat logic
 bool cheat::Cheat::InitCheat()
 {
     HANDLE PFSModuleBase = GetModuleHandleA("PirateFS-Win64-Shipping.exe");
@@ -177,13 +293,14 @@ bool cheat::Cheat::InitCheat()
     utils::Console::log("[DLL IDENTIFIER] Build tag: V" __DATE__ " " __TIME__);
 
     HookProcessEvent();
+    HookPostRender();
 
     utils::Console::log("[MinHook] Hooks initialized");
 
     return true;
 }
 
-void cheat::Cheat::RefreshCheat()
+void cheat::Cheat::RefreshCheat(SDK::UCanvas* canvas)
 {
     SDK::UWorld* world = SDK::UWorld::GetWorld();
     if (!world) return;
@@ -195,8 +312,7 @@ void cheat::Cheat::RefreshCheat()
     if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
 
     auto* gusPlayer = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
-
-    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+	if (!gusPlayer) return;
 
     // FOV 
     if (features::fov_enabled) {
@@ -251,13 +367,15 @@ void cheat::Cheat::RefreshCheat()
                 int idx2 = boneLinks[k][1];
                 if (idx1 >= boneCount || idx2 >= boneCount) continue;
 
-                SDK::FVector p1 = mesh->GetSocketLocation(mesh->GetBoneName(idx1));
-                SDK::FVector p2 = mesh->GetSocketLocation(mesh->GetBoneName(idx2));
-                SDK::FVector2D s1, s2;
+                SDK::FVector bone1World = mesh->GetSocketLocation(mesh->GetBoneName(idx1));
+                SDK::FVector bone2World = mesh->GetSocketLocation(mesh->GetBoneName(idx2));
+                SDK::FVector2D screen1, screen2;
 
-                if (playerController->ProjectWorldLocationToScreen(p1, &s1, false) &&
-                    playerController->ProjectWorldLocationToScreen(p2, &s2, false)) {
-                    drawList->AddLine(ImVec2(s1.X, s1.Y), ImVec2(s2.X, s2.Y), featurescolors::Bones_color, 1.5f);
+                if (playerController->ProjectWorldLocationToScreen(bone1World, &screen1, false) &&
+                    playerController->ProjectWorldLocationToScreen(bone2World, &screen2, false)) {
+
+                    SDK::FLinearColor color = helper::ImU32ToLinearColor(featurescolors::Bones_color);
+                    canvas->K2_DrawLine(screen1, screen2, 2.f, color);
                 }
             }
         }
@@ -291,8 +409,17 @@ void cheat::Cheat::RefreshCheat()
                 minY -= height * 0.25f;
                 maxY += height * 0.15f;
 
-                drawList->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY),
-                    featurescolors::box_color2D, 0.0f, 0, 1.5f);
+                SDK::FVector2D topLeft(minX, minY);
+                SDK::FVector2D topRight(maxX, minY);
+                SDK::FVector2D bottomLeft(minX, maxY);
+                SDK::FVector2D bottomRight(maxX, maxY);
+
+                SDK::FLinearColor color = helper::ImU32ToLinearColor(featurescolors::box_color2D);
+
+                canvas->K2_DrawLine(topLeft, topRight, 2.f, color);
+                canvas->K2_DrawLine(topRight, bottomRight, 2.f, color);
+                canvas->K2_DrawLine(bottomRight, bottomLeft, 2.f, color);
+                canvas->K2_DrawLine(bottomLeft, topLeft, 2.f, color);
             }
         }
         // show 3D box
@@ -346,38 +473,38 @@ void cheat::Cheat::RefreshCheat()
             };
 
             for (int e = 0; e < 12; ++e) {
-                ImVec2 p1(screen[edges[e][0]].X, screen[edges[e][0]].Y);
-                ImVec2 p2(screen[edges[e][1]].X, screen[edges[e][1]].Y);
-                drawList->AddLine(p1, p2, featurescolors::box_color3D, 1.5f);
+                SDK::FVector2D p1(screen[edges[e][0]].X, screen[edges[e][0]].Y);
+                SDK::FVector2D p2(screen[edges[e][1]].X, screen[edges[e][1]].Y);
+                SDK::FLinearColor color = helper::ImU32ToLinearColor(featurescolors::box_color3D);
+                canvas->K2_DrawLine(p1, p2, 2.f, color);
             }
         }
         if (features::health_bar) {
             SDK::FVector headPos = mesh->GetSocketLocation(mesh->GetBoneName(8)); // Cou / chest
-            SDK::FVector footPos = mesh->GetSocketLocation(mesh->GetBoneName(0)); // Pieds
+            SDK::FVector2D screenHead;
 
-            SDK::FVector2D screenHead, screenFoot;
-            if (playerController->ProjectWorldLocationToScreen(headPos, &screenHead, false) &&
-                playerController->ProjectWorldLocationToScreen(footPos, &screenFoot, false)) {
+            if (playerController->ProjectWorldLocationToScreen(headPos, &screenHead, false)) {
 
-                float height = screenFoot.Y - screenHead.Y;
-                float barHeight = height;
-                float barWidth = 5.0f;
-                float x = screenHead.X - 10.0f; // Décalage gauche
+                float barWidth = 40.0f;   // 2× plus large
+                float barHeight = 8.0f;   // 2× plus haut
+
+                float x = screenHead.X - (barWidth * 0.5f);
+                float y = screenHead.Y - 30.0f; // au-dessus de la tête
 
                 float raw = trainPlayer->Current_Health / 100.0f;
                 float percent = raw < 0.f ? 0.f : (raw > 1.f ? 1.f : raw);
-                float filled = barHeight * percent;
+                float filledWidth = barWidth * percent;
 
-                ImVec2 barTop = ImVec2(x, screenHead.Y);
-                ImVec2 barBottom = ImVec2(x + barWidth, screenFoot.Y);
-                ImVec2 filledTop = ImVec2(x, screenFoot.Y - filled);
+                SDK::FVector2D barPos(x, y);
 
-                // Fond (gris)
-                drawList->AddRectFilled(barTop, barBottom, IM_COL32(60, 60, 60, 200));
-                // Barre de vie (vert)
-                drawList->AddRectFilled(filledTop, barBottom, IM_COL32(0, 255, 0, 255));
-                // Contour (noir)
-                drawList->AddRect(barTop, barBottom, IM_COL32(0, 0, 0, 255));
+                // Fond gris
+                canvas->K2_DrawBox(barPos, SDK::FVector2D(barWidth, barHeight), 0.0f, SDK::FLinearColor(0.23f, 0.23f, 0.23f, 1.0f));
+
+                // Barre verte remplie (en fait une box sans bordure)
+                canvas->K2_DrawBox(barPos, SDK::FVector2D(filledWidth, barHeight), 0.0f, SDK::FLinearColor(0.f, 1.f, 0.f, 1.0f));
+
+                // Contour noir
+                canvas->K2_DrawBox(barPos, SDK::FVector2D(barWidth, barHeight), 1.0f, SDK::FLinearColor(0.f, 0.f, 0.f, 1.0f));
             }
         }
     }
@@ -398,73 +525,128 @@ void cheat::Cheat::RefreshCheat()
     }
 
     // Crosshair
-    if (features::crosshair_enabled) {
-        ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-        ImU32 color = ImGui::ColorConvertFloat4ToU32(featurescolors::crosshair_color);
+    if (features::crosshair_enabled)
+    {
+        SDK::FVector2D screenCenter(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+        SDK::FLinearColor color = helper::ImU32ToLinearColor(ImGui::ColorConvertFloat4ToU32(featurescolors::crosshair_color));
 
-        if (features::crosshair_type == 0) {
-            drawList->AddCircleFilled(screenCenter, features::crosshair_size, color);
+        if (features::crosshair_type == 0)
+        {
+            SDK::FVector2D center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+            SDK::FLinearColor color = helper::ImU32ToLinearColor(ImGui::ColorConvertFloat4ToU32(featurescolors::crosshair_color));
+            DrawFilledCircle(canvas, center, features::crosshair_size, 128, color);
         }
-        else if (features::crosshair_type == 1) {
+        else if (features::crosshair_type == 1)
+        {
             float s = features::crosshair_size;
             float t = features::crosshair_thickness;
-            drawList->AddLine(ImVec2(screenCenter.x - s, screenCenter.y), ImVec2(screenCenter.x + s, screenCenter.y), color, t);
-            drawList->AddLine(ImVec2(screenCenter.x, screenCenter.y - s), ImVec2(screenCenter.x, screenCenter.y + s), color, t);
+
+            canvas->K2_DrawLine(
+                SDK::FVector2D(screenCenter.X - s, screenCenter.Y),
+                SDK::FVector2D(screenCenter.X + s, screenCenter.Y),
+                t, color
+            );
+
+            canvas->K2_DrawLine(
+                SDK::FVector2D(screenCenter.X, screenCenter.Y - s),
+                SDK::FVector2D(screenCenter.X, screenCenter.Y + s),
+                t, color
+            );
         }
     }
 
 	// Aimbot
     if (features::aimbot_enabled) {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-
         SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
         SDK::FVector2D targetScreen;
+
         SDK::ACharacter* bestTarget = GetBestTargetCharacter(playerController, localPawn, screenCenterVec, targetScreen, features::aimbot_type, features::aimbot_fov_enabled, features::aimbot_fov);
 
-        if (bestTarget)
-        {
-            if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000))
-            {
-                SDK::USkeletalMeshComponent* mesh = bestTarget->Mesh;
-                if (mesh && mesh->GetNumBones() > 2)
+        if (bestTarget && (GetAsyncKeyState(VK_RBUTTON) & 0x8000)) {
+            SDK::USkeletalMeshComponent* mesh = bestTarget->Mesh;
+            if (mesh && mesh->GetNumBones() > 2) {
+                SDK::FVector headPos = mesh->GetSocketLocation(mesh->GetBoneName(2));
+
+                SDK::FVector shooterPos = playerController->PlayerCameraManager->GetCameraLocation();
+                SDK::FVector targetVel = bestTarget->GetVelocity();
+                int weaponID = GetCurrentWeapon(gusPlayer);
+                float projectileSpeed = 15000.f;
+
+                switch (weaponID)
                 {
-                    SDK::FVector targetHead = mesh->GetSocketLocation(mesh->GetBoneName(2));
-                    SDK::FVector from = playerController->PlayerCameraManager->GetCameraLocation();
-                    SDK::FVector aimDir = helper::Vec3Normalize(targetHead - from);
-                    SDK::FRotator aimRot = helper::VecToRotator(aimDir);
-                    aimRot.Pitch *= -1.f;
-
-                    playerController->SetControlRotation(aimRot);
-
-                    SDK::APlayerCameraManager* cam = playerController->PlayerCameraManager;
-                    if (cam)
-                        cam->K2_SetActorRotation(aimRot, false);
+                case 1:
+                    projectileSpeed = 8000.f;
+                    break;
+                case 2:
+                    projectileSpeed = 15000.f;
+                    break;
+                case 3:
+                    projectileSpeed = 20000.f;
+                    break;
+                default:
+                    break;
                 }
+
+                SDK::FVector toTarget = headPos - shooterPos;
+                float dist = helper::Vec3Size(toTarget);
+                float timeToHit = dist / projectileSpeed;
+
+                SDK::FVector predictedHead = headPos + (targetVel * timeToHit);
+
+                SDK::FVector aimDir = helper::Vec3Normalize(predictedHead - shooterPos);
+                SDK::FRotator aimRot = helper::VecToRotator(aimDir);
+                aimRot.Pitch *= -1.f;
+
+                playerController->SetControlRotation(aimRot);
+
+                if (playerController->PlayerCameraManager)
+                    playerController->PlayerCameraManager->K2_SetActorRotation(aimRot, false);
             }
         }
     }
 
-	// Draw selected player
-    if (features::show_selected_player && features::aimbot_enabled or features::enable_magicbullet) {
+    // Draw selected player
+    if ((features::show_selected_player && features::aimbot_enabled) || features::enable_magicbullet)
+    {
         ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         SDK::FVector2D screenCenterVec = { screenCenter.x, screenCenter.y };
         SDK::FVector2D targetScreen;
+
         SDK::ACharacter* bestTarget = GetBestTargetCharacter(playerController, localPawn, screenCenterVec, targetScreen, features::aimbot_type, features::aimbot_fov_enabled, features::aimbot_fov);
+
         if (bestTarget)
         {
-            drawList->AddCircleFilled(ImVec2(targetScreen.X, targetScreen.Y), features::selected_player_size, featurescolors::Aimbot_dot_color);
+            float radius = features::selected_player_size;
+            SDK::FLinearColor color = helper::ImU32ToLinearColor(featurescolors::Aimbot_dot_color);
+            DrawFilledCircle(canvas, targetScreen, radius, 128, color); // même cercle que crosshair
         }
-	}
+    }
 
 	// Draw Aimbot/MagicBullet FOV
     if (features::aimbot_fov_enabled && features::aimbot_fov > 0.f)
     {
-        ImVec2 screenCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-        drawList->AddCircle(screenCenter, features::aimbot_fov, featurescolors::Aimbot_FOV_color, 64, 1.5f);
+        SDK::FVector2D center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+        float radius = features::aimbot_fov;
+        int segments = 64;
+        float angleStep = 2 * 3.14159265f / segments;
+
+        SDK::FLinearColor color = helper::ImU32ToLinearColor(featurescolors::Aimbot_FOV_color);
+
+        for (int i = 0; i < segments; ++i)
+        {
+            float angle1 = i * angleStep;
+            float angle2 = (i + 1) * angleStep;
+
+            SDK::FVector2D p1(center.X + cosf(angle1) * radius, center.Y + sinf(angle1) * radius);
+            SDK::FVector2D p2(center.X + cosf(angle2) * radius, center.Y + sinf(angle2) * radius);
+
+            canvas->K2_DrawLine(p1, p2, 1.5f, color);
+        }
     }
 
-    static std::string lastSpoofedName = "";
 	// Name spoofing
+    static std::string lastSpoofedName = "";
     if (features::spoof_name_enabled) {
         std::string current = std::string(features::spoofed_name);
         if (current != lastSpoofedName && current.length() > 0) {
@@ -492,130 +674,71 @@ void cheat::Cheat::RefreshCheat()
 
     // No Reload
     if (features::no_reload) {
-        SDK::UWorld* world = SDK::UWorld::GetWorld();
-        if (!world) return;
+        gusPlayer->Reloading = false;
+        gusPlayer->Is_Reload_ = false;
+        gusPlayer->Reload_time = 0.0;
+        gusPlayer->Loaded = true;
+        gusPlayer->CanFire_ = true;
+        gusPlayer->ThrowingBlunderbomb_ = false;
 
-        SDK::APlayerController* playerController = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
-        if (!playerController) return;
+        gusPlayer->Flintlock_Current_Timer = SDK::FTimerHandle{};
+        gusPlayer->IsReloadingFlintlock_ = false;
+        gusPlayer->Finish_Reloading_Flintlock();
+        gusPlayer->Finish_Flintlock_Reload_slot_2();
+        gusPlayer->FlintlockFired = false;
 
-        SDK::APawn* localPawn = playerController->AcknowledgedPawn;
-        if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
+        gusPlayer->Sniper_Current_Timer = SDK::FTimerHandle{};
+        gusPlayer->IsReloadingEOR_ = false;
+        gusPlayer->Finish_Reloading_EOR();
+        gusPlayer->Finish_EOR_Reload_slot_2();
+        gusPlayer->EorFired = false;
 
-        auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
+        gusPlayer->Blunderbuss_Current_Timer = SDK::FTimerHandle{};
+        gusPlayer->IsReloadingBlunderbuss_ = false;
+        gusPlayer->Finish_Blunderbuss_Reload();
+        gusPlayer->Finish_Blunderbuss_Reload_slot_2();
+        gusPlayer->BlunderBussFired = false;
+    }
 
-        // Optimized callFunction with static cache
-        auto callFunctionCached = [](SDK::UObject* obj, const char* name) {
-            static std::unordered_map<std::string, SDK::UFunction*> cache;
+    // QS
+    if (features::qs) {
+        gusPlayer->Skip_swap_delay = true;
+        gusPlayer->Swap_delay = false;
+    }
 
-            SDK::UFunction* fn = nullptr;
-            auto it = cache.find(name);
-            if (it != cache.end()) {
-                fn = it->second;
-            }
-            else {
-                fn = SDK::UObject::FindObject<SDK::UFunction>(name);
-                if (fn) cache[name] = fn;
-            }
-
-            if (fn && obj)
-                obj->ProcessEvent(fn, nullptr);
-            };
-
-        gus->Reloading = false;
-        gus->Is_Reload_ = false;
-        gus->Reload_time = 0.0;
-        gus->Loaded = true;
-        gus->CanFire_ = true;
-
-        if (gus->FlintlockFired || gus->IsReloadingFlintlock_) {
-            gus->Flintlock_Current_Timer = SDK::FTimerHandle{};
-            gus->IsReloadingFlintlock_ = false;
-            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading Flintlock");
-            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Flintlock Reload slot 2");
-            gus->FlintlockFired = false;
-        }
-
-        if (gus->EorFired || gus->IsReloadingEOR_) {
-            gus->Sniper_Current_Timer = SDK::FTimerHandle{};
-            gus->IsReloadingEOR_ = false;
-            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Reloading EOR");
-            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish EOR Reload slot 2");
-            gus->EorFired = false;
-        }
-
-        if (gus->BlunderBussFired || gus->IsReloadingBlunderbuss_) {
-            gus->Blunderbuss_Current_Timer = SDK::FTimerHandle{};
-            gus->IsReloadingBlunderbuss_ = false;
-            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload");
-            callFunctionCached(gus, "Function TrainGusPlayer.TrainGusPlayer_C.Finish Blunderbuss Reload slot 2");
-            gus->BlunderBussFired = false;
+    // Godmode
+    if (features::godmode) {
+        if (gusPlayer->Current_Health < 100.0) {
+            gusPlayer->Current_Health = 9999.0;
+			gusPlayer->Update_Health_on_Server();
         }
     }
 
-	//host only
-    if (features::godmode) {
-        SDK::UWorld* world = SDK::UWorld::GetWorld();
-        if (!world) return;
-        SDK::APlayerController* playerController = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
-        if (!playerController) return;
-        SDK::APawn* localPawn = playerController->AcknowledgedPawn;
-        if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
-        auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
-        gus->Current_Health = 100.0;
-		gus->client_health = 100.0;
-	}
+    // Fly
     if (features::enable_fly) {
         SDK::UWorld* world = SDK::UWorld::GetWorld();
         if (!world) return;
-        SDK::APlayerController* playerController = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
-        if (!playerController) return;
-        SDK::APawn* localPawn = playerController->AcknowledgedPawn;
+
+        SDK::APlayerController* pc = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
+        if (!pc) return;
+
+        SDK::APawn* localPawn = pc->AcknowledgedPawn;
         if (!localPawn || !localPawn->IsA(SDK::ATrainGusPlayer_C::StaticClass())) return;
+
         auto* gus = static_cast<SDK::ATrainGusPlayer_C*>(localPawn);
-        SDK::FVector launchVelocity = { 0.f, 0.f, 1000.f };
-        bool overrideXY = true;
-        bool overrideZ = true;
-        gus->LaunchCharacter(launchVelocity, overrideXY, overrideZ); //trouver la mm mais exec server side
-	}
 
-    if (features::demon_shoot && (GetAsyncKeyState(VK_LBUTTON) & 0x8000)) // Left mouse button held
-    {
-        static SDK::UFunction* fireFunc_19 = nullptr;
-        static SDK::UFunction* fireFunc_16 = nullptr;
-        static SDK::UFunction* fireFunc_15 = nullptr;
+        SDK::FRotator camRot = pc->PlayerCameraManager->GetCameraRotation();
+        SDK::FVector direction = helper::RotatorToVector(camRot);
+        direction = helper::Vec3Normalize(direction) * features::fly_force;
 
-        if (!fireFunc_19)
-            fireFunc_19 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_19");
-        if (!fireFunc_16)
-            fireFunc_16 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_16");
-        if (!fireFunc_15)
-            fireFunc_15 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_15");
-
-        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) // maintenu
-        {
-            struct {
-                SDK::FKey Key_0;
-            } param;
-            param.Key_0.KeyName.ComparisonIndex = 84820;
-
-            static SDK::UFunction* fireFunc_19 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_19");
-            static SDK::UFunction* fireFunc_16 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_16");
-            static SDK::UFunction* fireFunc_15 = SDK::UObject::FindObject<SDK::UFunction>("Function TrainGusPlayer.TrainGusPlayer_C.InpActEvt_Fire weapon_K2Node_InputActionEvent_15");
-
-            SDK::UWorld* world = SDK::UWorld::GetWorld();
-            if (!world) return;
-
-            SDK::APlayerController* pc = world->OwningGameInstance->LocalPlayers[0]->PlayerController;
-            if (!pc) return;
-
-            SDK::APawn* localPawn = pc->AcknowledgedPawn;
-            if (!localPawn) return;
-
-            if (fireFunc_19) localPawn->ProcessEvent(fireFunc_19, &param);
-            if (fireFunc_16) localPawn->ProcessEvent(fireFunc_16, &param);
-            if (fireFunc_15) localPawn->ProcessEvent(fireFunc_15, &param);
+        if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
+            gus->Sword_Dodge_Forward(direction.X, direction.Y, gusPlayer);
         }
-	}
-    
+    }
+
+    // Deamon shoot 
+    if (features::demon_shoot && (GetAsyncKeyState(VK_CONTROL) & 0x8000)) {
+        gusPlayer->InpActEvt_Fire_weapon_K2Node_InputActionEvent_15(SDK::FKey());
+    }
     return;
 }

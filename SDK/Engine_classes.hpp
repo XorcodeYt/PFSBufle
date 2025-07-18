@@ -3794,7 +3794,8 @@ static_assert(offsetof(UPlaneReflectionCaptureComponent, InfluenceRadiusScale) =
 static_assert(offsetof(UPlaneReflectionCaptureComponent, PreviewInfluenceRadius) == 0x000330, "Member 'UPlaneReflectionCaptureComponent::PreviewInfluenceRadius' has a wrong offset!");
 static_assert(offsetof(UPlaneReflectionCaptureComponent, PreviewCaptureBox) == 0x000338, "Member 'UPlaneReflectionCaptureComponent::PreviewCaptureBox' has a wrong offset!");
 
-// Class Engine.ScriptViewportClient
+// Class Engine.Script
+// Client
 // 0x0010 (0x0038 - 0x0028)
 class UScriptViewportClient : public UObject
 {

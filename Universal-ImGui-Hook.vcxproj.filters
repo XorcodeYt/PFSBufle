@@ -72,6 +72,9 @@
     <ClCompile Include="config.cpp">
       <Filter>Sources Files</Filter>
     </ClCompile>
+    <ClCompile Include="SDK\TrainGusPlayer_functions.cpp">
+      <Filter>Sources Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\imconfig.h">

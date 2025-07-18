@@ -3,6 +3,7 @@
 #ifndef MENU_H
 #define MENU_H
 
+#include <Windows.h>
 #include "SDK.hpp"
 #include "imgui/imgui.h"
 
@@ -23,8 +24,11 @@ namespace features {
     //misc
     extern bool bhop;
     extern bool infinite_supplies;
-    extern bool godmode; //marche po
-    extern bool enable_fly; //marche po
+    extern bool godmode;
+    extern bool enable_fly;
+    extern float fly_force;
+    extern bool freeze;
+    extern int freeze_toggle_key;
 
     //veiw
     extern float fov;
@@ -44,7 +48,8 @@ namespace features {
     extern int aimbot_type;
     extern bool infinite_ammo;
     extern bool no_reload;
-    extern bool demon_shoot; //marche po
+    extern bool qs;
+    extern bool demon_shoot;
     
 
     //server
@@ -177,6 +182,48 @@ inline bool CustomRoundedSlider(const char* label, float* value, float min, floa
     draw->AddText(text_pos, ImGui::GetColorU32(ImGuiCol_Text), buf);
 
     return changed;
+}
+
+inline bool InputKey(const char* label, int* outKey)
+{
+    ImGui::Text("%s", label);
+
+    static bool awaitingInput = false;
+    static int* targetKeyPtr = nullptr;
+
+    if (awaitingInput && targetKeyPtr == outKey)
+    {
+        ImGui::SameLine();
+        ImGui::Text("Press a key...");
+    }
+    else
+    {
+        ImGui::SameLine();
+        ImGui::Text("Key: %c", *outKey >= 32 && *outKey < 127 ? *outKey : '?');
+    }
+
+    std::string buttonLabel = std::string("Change##") + label;
+    if (ImGui::Button(buttonLabel.c_str()))
+    {
+        awaitingInput = true;
+        targetKeyPtr = outKey;
+    }
+
+    if (awaitingInput && targetKeyPtr == outKey)
+    {
+        for (int vk = 8; vk <= 255; ++vk)
+        {
+            if (GetAsyncKeyState(vk) & 0x1)
+            {
+                *targetKeyPtr = vk;
+                awaitingInput = false;
+                targetKeyPtr = nullptr;
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 const ImVec4 frameStatic = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);

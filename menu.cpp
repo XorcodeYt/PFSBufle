@@ -14,8 +14,11 @@ namespace features {
     // misc
     bool bhop = false;
     bool infinite_supplies = false;
-    bool godmode = false; // marche po
-    bool enable_fly = false; // marche po
+    bool godmode = false;
+    bool enable_fly = false;
+    float fly_force = 100.0f;
+	bool freeze = false;
+	int freeze_toggle_key = VK_F1;
 
     // view
     float fov = 90.0f;
@@ -34,6 +37,7 @@ namespace features {
     float aimbot_fov = 90.0f;
     int aimbot_type = 0;
     bool infinite_ammo = false;
+    bool qs = false;
     bool no_reload = false;
     bool demon_shoot = false; //marche po
     bool enable_magicbullet = false;
@@ -226,16 +230,21 @@ namespace menu {
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6);
             ImGui::Combo("Aimbot Type", &features::aimbot_type, aimModes, IM_ARRAYSIZE(aimModes));
             ImGui::Separator();
-            ImGui::Checkbox("Infinite Ammo + Supplies", &features::infinite_ammo);
+            ImGui::Checkbox("Infinite Ammo", &features::infinite_ammo);
+            ImGui::Checkbox("QS", &features::qs);
             ImGui::Checkbox("No Reload", &features::no_reload);
             ImGui::Checkbox("Enable Demon Shoot", &features::demon_shoot);
         }
         else if (strcmp(tabs[current_tab], "Misc") == 0) {
             ImGui::Checkbox("Bunny Hop", &features::bhop);
+            ImGui::Checkbox("Gode Mode", &features::godmode);
             ImGui::Checkbox("Infinite Supplies", &features::infinite_supplies);
             ImGui::Separator();
-            ImGui::Checkbox("Enable Fly", &features::enable_fly);
-            ImGui::Checkbox("Gode Mode", &features::godmode);
+            ImGui::Checkbox("Fly", &features::enable_fly);
+            CustomRoundedSlider("##Fly_force", &features::fly_force, 10.0f, 500.0f, ImVec2(300, 6), featurescolors::generalcolorU32);
+			ImGui::Separator();
+			ImGui::Checkbox("Freeze", &features::freeze);
+            InputKey("Freeze Key", &features::freeze_toggle_key);
         }
         else if (strcmp(tabs[current_tab], "Server") == 0) {
             bool prestaEnabled = false;
