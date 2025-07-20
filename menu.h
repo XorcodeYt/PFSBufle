@@ -11,10 +11,19 @@
 namespace menu {
     extern bool isOpen;
     extern bool noTitleBar;
-    void Init();
+
+    extern bool intro;
+    extern float intro_timer;
+    extern const float intro_duration;
+    extern ImFont* intro_font;
+
+    void DrawMenu();
+    void RenderIntro();
 }
 
 namespace features {
+    extern float menu_scale_factor;
+
     //player features   
     extern bool bone_esp;
     extern bool box2d_esp;
@@ -27,8 +36,6 @@ namespace features {
     extern bool godmode;
     extern bool enable_fly;
     extern float fly_force;
-    extern bool freeze;
-    extern int freeze_toggle_key;
 
     //veiw
     extern float fov;
@@ -67,6 +74,23 @@ namespace featurescolors {
     inline ImU32 Aimbot_dot_color = IM_COL32(255, 255, 255, 255);
     inline ImU32 Bullet_color = IM_COL32(255, 255, 255, 255);
     inline ImU32 generalcolorU32 = ImGui::ColorConvertFloat4ToU32(generalcolor);
+}
+
+inline void ApplyMenuScale(float scale, float& current_applied_scale, bool& styled_flag) {
+    ImGuiStyle clean = ImGuiStyle();
+    ImGui::GetStyle() = clean;
+
+    ImGui::GetStyle().ScaleAllSizes(scale);
+    ImGui::GetIO().FontGlobalScale = scale;
+
+    current_applied_scale = scale;
+    styled_flag = false;
+}
+
+inline void SafeCheckStyle(float& current_applied_scale, bool& styled_flag) {
+    auto& s = ImGui::GetStyle();
+    if (s.WindowBorderSize < 0.0f || s.WindowPadding.x < 0.0f || s.Alpha <= 0.0f || s.WindowBorderSize > 20.0f)
+        ApplyMenuScale(1.0f, current_applied_scale, styled_flag);
 }
 
 inline void DrawCoolSelector(const char* label, ImVec4& color)
@@ -182,48 +206,6 @@ inline bool CustomRoundedSlider(const char* label, float* value, float min, floa
     draw->AddText(text_pos, ImGui::GetColorU32(ImGuiCol_Text), buf);
 
     return changed;
-}
-
-inline bool InputKey(const char* label, int* outKey)
-{
-    ImGui::Text("%s", label);
-
-    static bool awaitingInput = false;
-    static int* targetKeyPtr = nullptr;
-
-    if (awaitingInput && targetKeyPtr == outKey)
-    {
-        ImGui::SameLine();
-        ImGui::Text("Press a key...");
-    }
-    else
-    {
-        ImGui::SameLine();
-        ImGui::Text("Key: %c", *outKey >= 32 && *outKey < 127 ? *outKey : '?');
-    }
-
-    std::string buttonLabel = std::string("Change##") + label;
-    if (ImGui::Button(buttonLabel.c_str()))
-    {
-        awaitingInput = true;
-        targetKeyPtr = outKey;
-    }
-
-    if (awaitingInput && targetKeyPtr == outKey)
-    {
-        for (int vk = 8; vk <= 255; ++vk)
-        {
-            if (GetAsyncKeyState(vk) & 0x1)
-            {
-                *targetKeyPtr = vk;
-                awaitingInput = false;
-                targetKeyPtr = nullptr;
-                return true;
-            }
-        }
-    }
-
-    return false;
 }
 
 const ImVec4 frameStatic = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);

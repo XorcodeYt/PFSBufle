@@ -84,9 +84,12 @@ namespace d3d12hook {
             while (ShowCursor(TRUE) < 0);
 
             ImGuiIO& io = ImGui::GetIO();
+
             ImFontConfig fontConfig;
             fontConfig.FontDataOwnedByAtlas = false;
             io.Fonts->AddFontFromMemoryTTF(MaFont, MaFontsize, 16.0f, &fontConfig);
+            menu::intro_font = io.Fonts->AddFontFromMemoryTTF(MaFont, MaFontsize, 96.0f, &fontConfig);
+
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
             ImGui::StyleColorsDark();
             ImGui_ImplWin32_Init(desc.OutputWindow);
@@ -112,43 +115,50 @@ namespace d3d12hook {
             ImGui_ImplWin32_NewFrame();
             ImGui::NewFrame();
 
+            ImGuiIO& io = ImGui::GetIO();
             static bool lastKeyState = false;
             bool currentKeyState = (GetAsyncKeyState(globals::openMenuKey) & 0x8000);
 
-            if (currentKeyState && !lastKeyState) {
+            if (currentKeyState && !lastKeyState)
                 menu::isOpen = !menu::isOpen;
-            }
             lastKeyState = currentKeyState;
 
+            if (menu::intro) {
+                menu::intro_timer += io.DeltaTime;
+                menu::isOpen = false;
+                io.MouseDrawCursor = true;
+
+                if (GetCapture() != desc.OutputWindow)
+                    ReleaseCapture(), SetFocus(desc.OutputWindow);
+
+                menu::RenderIntro();
+
+                if (menu::intro_timer >= menu::intro_duration) {
+                    menu::intro = false;
+                    menu::isOpen = true;
+                }
+            }
+
             static bool lastOpen = false;
-            ImGuiIO& io = ImGui::GetIO();
+
+            if (menu::isOpen != lastOpen) {
+                if (menu::isOpen)
+                    ReleaseCapture(), SetFocus(desc.OutputWindow);
+                else
+                    SetCapture(desc.OutputWindow);
+
+                lastOpen = menu::isOpen;
+            }
+
+            if (menu::isOpen && GetCapture() != desc.OutputWindow)
+                ReleaseCapture();
 
             io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
             io.MouseDrawCursor = menu::isOpen;
 
-            if (menu::isOpen != lastOpen)
-            {
-                if (menu::isOpen)
-                {
-                    ReleaseCapture();
-                    SetFocus(desc.OutputWindow);
-                }
-                else
-                {
-                    SetCapture(desc.OutputWindow);
-                }
-
-                lastOpen = menu::isOpen;
-            }
-            if (menu::isOpen)
-            {
-                if (GetCapture() != nullptr && GetCapture() != desc.OutputWindow)
-                    ReleaseCapture();
-            }
-
-            menu::Init();
-
+            menu::DrawMenu();
             ImGui::Render();
+
 
             UINT frameIdx = pSwapChain->GetCurrentBackBufferIndex();
             FrameContext& ctx = gFrameContexts[frameIdx];
